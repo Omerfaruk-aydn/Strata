@@ -1,0 +1,209 @@
+/* MessageBubble styles */
+
+.message-bubble {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  animation: fadeIn 200ms var(--ease-out) both;
+}
+
+.message-bubble + .message-bubble {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Avatar */
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.avatar-user {
+  background: var(--accent-info-dim);
+}
+
+.avatar-assistant {
+  background: var(--accent-active-dim);
+}
+
+/* Content */
+.message-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.message-body {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text-primary);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.message-paragraph {
+  margin-bottom: var(--space-2);
+}
+
+.message-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Inline code */
+.inline-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  color: var(--accent-active);
+}
+
+/* Code blocks */
+.code-block-wrapper {
+  margin: var(--space-3) 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border-hairline);
+}
+
+.code-block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  background: #15161e;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.code-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.code-copy-btn {
+  font-size: 11px;
+  padding: 2px var(--space-2);
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.code-copy-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
+}
+
+/* Lists */
+.message-list {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-5);
+}
+
+.message-list li {
+  margin-bottom: var(--space-1);
+}
+
+.message-list-ordered {
+  list-style-type: decimal;
+}
+
+/* Blockquote */
+.message-blockquote {
+  border-left: 3px solid var(--accent-active);
+  padding: var(--space-2) var(--space-4);
+  margin: var(--space-3) 0;
+  background: var(--accent-active-dim);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--text-secondary);
+}
+
+/* Table */
+.message-table-wrapper {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+}
+
+.message-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.message-table th,
+.message-table td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-hairline);
+  text-align: left;
+}
+
+.message-table th {
+  background: var(--bg-panel-raised);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Streaming cursor */
+.streaming-cursor {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: var(--space-1);
+  vertical-align: middle;
+}
+
+.cursor-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-active);
+  animation: typing 1.4s infinite;
+}
+
+.cursor-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.cursor-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Actions */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  opacity: 0;
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.message-bubble:hover .message-actions {
+  opacity: 1;
+}
+
+.message-action-btn {
+  font-size: 11px !important;
+  padding: 2px var(--space-2) !important;
+}
+
+.message-meta {
+  color: var(--text-tertiary);
+  margin-left: auto;
+}

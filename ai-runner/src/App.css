@@ -1,0 +1,151 @@
+/* App — Main layout styles */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ── Header ── */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  padding: 0 var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+  z-index: var(--z-header);
+  -webkit-app-region: drag; /* Tauri: draggable title bar */
+}
+
+.app-header button,
+.app-header a {
+  -webkit-app-region: no-drag;
+}
+
+.header-left,
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.header-brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.header-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.header-version {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  padding: 1px 6px;
+  background: var(--bg-panel-raised);
+  border-radius: var(--radius-full);
+}
+
+.header-toggle {
+  padding: var(--space-2);
+  color: var(--text-secondary);
+}
+
+.header-toggle:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+
+.header-center .btn.active {
+  background: var(--accent-active-dim);
+  color: var(--accent-active);
+}
+
+/* ── Main Content ── */
+.app-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Left Panel ── */
+.left-panel {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-hairline);
+  overflow: hidden;
+  animation: slideInLeft 200ms var(--ease-out) both;
+}
+
+.sessions-section {
+  border-bottom: 1px solid var(--border-hairline);
+  max-height: 40%;
+  overflow-y: auto;
+}
+
+.models-section {
+  flex: 1;
+  overflow: hidden;
+}
+
+.models-section .model-shelf {
+  width: 100%;
+  min-width: 0;
+  border-right: none;
+  animation: none;
+}
+
+/* ── Toast ── */
+.toast {
+  position: fixed;
+  bottom: var(--space-6);
+  right: var(--space-6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  min-width: 300px;
+  max-width: 480px;
+  z-index: var(--z-notification);
+}
+
+.toast-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toast-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.toast-message {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}

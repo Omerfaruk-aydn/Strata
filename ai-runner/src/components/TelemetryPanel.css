@@ -1,0 +1,156 @@
+/* TelemetryPanel — Right panel styles */
+
+.telemetry-panel {
+  width: var(--telemetry-width);
+  min-width: var(--telemetry-width);
+  height: 100%;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-hairline);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  animation: slideInRight 200ms var(--ease-out) both;
+}
+
+.telemetry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border-hairline);
+  flex-shrink: 0;
+}
+
+.connection-dot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.connection-dot::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.connection-dot.connected::before {
+  background: var(--accent-success);
+  box-shadow: 0 0 6px var(--accent-success);
+}
+
+.connection-dot.disconnected::before {
+  background: var(--accent-warning);
+  animation: pulse 2s var(--ease-in-out) infinite;
+}
+
+.telemetry-content {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.telemetry-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border-hairline);
+}
+
+/* Metric Bar */
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.metric-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.metric-value {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.metric-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-panel-raised);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width var(--duration-telemetry) var(--ease-out);
+  min-width: 2px;
+}
+
+/* Metric Values Grid */
+.metric-values-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.metric-value-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.metric-icon {
+  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-panel-raised);
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+}
+
+.metric-value-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.metric-number {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+  transition: all var(--duration-telemetry) var(--ease-out);
+}
+
+/* Empty State */
+.telemetry-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+  color: var(--text-tertiary);
+}
+
+.telemetry-empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
+
+/* Active Model Info */
+.active-model-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--bg-panel-raised);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-hairline);
+}

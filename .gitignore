@@ -1,0 +1,33 @@
+# Node
+node_modules/
+dist/
+dist-ssr/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Models
+*.gguf
+models/
+cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Tauri
+src-tauri/target/

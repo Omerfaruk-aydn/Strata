@@ -1,0 +1,117 @@
+/* LayerDistributionBar — Signature element */
+
+.layer-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.layer-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.layer-bar-total {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.layer-bar {
+  display: flex;
+  height: 28px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-hairline);
+}
+
+.layer-bar-segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width 300ms var(--ease-in-out);
+  cursor: pointer;
+  min-width: 4px;
+}
+
+.segment-gpu {
+  background: var(--accent-active);
+}
+
+.segment-ram {
+  background: var(--accent-ready);
+}
+
+.segment-disk {
+  background: var(--accent-disk);
+}
+
+.segment-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-inverse);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+}
+
+.segment-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-tooltip);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fadeIn 100ms var(--ease-out) both;
+}
+
+.segment-tooltip strong {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.segment-tooltip span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Legend */
+.layer-bar-legend {
+  display: flex;
+  gap: var(--space-4);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.segment-gpu { background: var(--accent-active); }
+.legend-dot.segment-ram { background: var(--accent-ready); }
+.legend-dot.segment-disk { background: var(--accent-disk); }
+
+.legend-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}

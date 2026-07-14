@@ -1,0 +1,136 @@
+/* SessionList styles */
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0 var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+}
+
+/* Groups */
+.session-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-group-label {
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Session Item */
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  border-left: 3px solid transparent;
+}
+
+.session-item:hover {
+  background: var(--bg-hover);
+}
+
+.session-active {
+  background: var(--bg-panel-raised);
+  border-left-color: var(--accent-active);
+}
+
+.session-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.session-date {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+/* Rename Input */
+.session-rename-input {
+  flex: 1;
+  padding: 2px var(--space-2);
+  font-size: 13px;
+  background: var(--bg-input);
+  border: 1px solid var(--accent-active);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* Context Menu */
+.session-context-menu {
+  position: fixed;
+  min-width: 180px;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown);
+  padding: var(--space-1);
+  animation: scaleIn 100ms var(--ease-spring) both;
+}
+
+.session-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: 13px;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--duration-fast);
+}
+
+.session-context-menu button:hover {
+  background: var(--bg-hover);
+}
+
+.context-divider {
+  height: 1px;
+  background: var(--border-hairline);
+  margin: var(--space-1) 0;
+}
+
+.context-danger {
+  color: var(--accent-warning) !important;
+}
+
+.context-danger:hover {
+  background: var(--accent-warning-dim) !important;
+}
+
+/* Empty */
+.session-empty {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-6);
+}
