@@ -38,6 +38,7 @@ from .api.routes_models import router as models_router
 from .api.routes_chat import router as chat_router
 from .api.routes_settings import router as settings_router
 from .api.ws_telemetry import router as telemetry_router
+from .api.routes_optimizer import router as optimizer_router
 from .db import session_store
 
 
@@ -84,6 +85,7 @@ app.include_router(models_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
 app.include_router(telemetry_router)
+app.include_router(optimizer_router)
 
 
 @app.get("/")

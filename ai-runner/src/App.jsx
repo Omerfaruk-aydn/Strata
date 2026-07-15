@@ -16,6 +16,7 @@ import ChatConsole from './components/ChatConsole';
 import TelemetryPanel from './components/TelemetryPanel';
 import SessionList from './components/SessionList';
 import SettingsModal from './components/SettingsModal';
+import SystemOptimizer from './components/SystemOptimizer';
 import './App.css';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [showSessions, setShowSessions] = useState(true);
 
   const { fetchSettings, theme } = useSettingsStore();
@@ -62,6 +64,12 @@ export default function App() {
     if (isMod && e.key === ',') {
       e.preventDefault();
       setSettingsOpen(true);
+    }
+
+    // Ctrl/Cmd + Shift + O: Open System Optimizer
+    if (isMod && e.shiftKey && e.key.toLowerCase() === 'o') {
+      e.preventDefault();
+      setOptimizerOpen(true);
     }
 
     // Ctrl/Cmd + B: Toggle left sidebar
@@ -114,6 +122,14 @@ export default function App() {
         <div className="header-right">
           <button
             className="btn btn-ghost btn-icon"
+            onClick={() => setOptimizerOpen(true)}
+            title="Sistem Optimizasyonu (Ctrl+Shift+O)"
+            style={{ marginRight: '4px' }}
+          >
+            🔧
+          </button>
+          <button
+            className="btn btn-ghost btn-icon"
             onClick={() => setSettingsOpen(true)}
             title={t('settings.title') + ' (Ctrl+,)'}
           >
@@ -156,6 +172,9 @@ export default function App() {
 
       {/* ── Settings Modal ── */}
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* ── System Optimizer Modal ── */}
+      <SystemOptimizer isOpen={optimizerOpen} onClose={() => setOptimizerOpen(false)} />
 
       {/* ── Error Toast ── */}
       {(error || modelError) && (

@@ -344,6 +344,17 @@ DEFAULT_SETTINGS = {
     "api_port": 8420,
     "api_key": None,
     "advanced_mode": False,
+    # Performance & Optimization Defaults
+    "kv_cache_type": "q4_0",
+    "flash_attn": True,
+    "use_mlock": True,
+    "cache_context_shift": True,
+    "draft_model_path": "",
+    "draft_n_gpu_layers": -1,
+    # Prompt Pruning (FR-608)
+    "max_context_length": 4096,
+    "max_history_messages": 20,
+    "auto_context_prune": True,
 }
 
 

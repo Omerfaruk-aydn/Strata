@@ -32,6 +32,17 @@ export default function SettingsModal({ isOpen, onClose }) {
         apiPort: settings.apiPort,
         apiKey: settings.apiKey,
         advancedMode: settings.advancedMode,
+        // Performance
+        kvCacheType: settings.kvCacheType,
+        flashAttn: settings.flashAttn,
+        useMlock: settings.useMlock,
+        cacheContextShift: settings.cacheContextShift,
+        draftModelPath: settings.draftModelPath,
+        draftNGpuLayers: settings.draftNGpuLayers,
+        // Prompt Pruning
+        maxContextLength: settings.maxContextLength,
+        maxHistoryMessages: settings.maxHistoryMessages,
+        autoContextPrune: settings.autoContextPrune,
       });
     }
   }, [isOpen, settings]);
@@ -49,10 +60,11 @@ export default function SettingsModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   const tabs = [
-    { id: 'general', label: t('settings.general'), icon: '⚙️' },
-    { id: 'storage', label: t('settings.storage'), icon: '💾' },
+    { id: 'general',  label: t('settings.general'),  icon: '⚙️' },
+    { id: 'storage',  label: t('settings.storage'),  icon: '💾' },
     { id: 'advanced', label: t('settings.advanced'), icon: '🔧' },
-    { id: 'api', label: t('settings.api'), icon: '🔌' },
+    { id: 'pruning',  label: 'Bağlam Yönetimi',      icon: '✂️' },
+    { id: 'api',      label: t('settings.api'),      icon: '🔌' },
   ];
 
   return (
@@ -390,6 +402,74 @@ export default function SettingsModal({ isOpen, onClose }) {
             </div>
           )}
 
+
+          {/* Pruning Tab (FR-608 Context Management / Prompt Pruning) */}
+          {activeTab === 'pruning' && (
+            <div className="settings-section animate-fade-in">
+              <p className="settings-section-title">✂️ Bağlam Kırpma & Yönetimi</p>
+              <p className="text-small" style={{ marginBottom: '1rem', opacity: 0.7 }}>
+                Uzun sohbetlerin bellek aşımı yapmasını veya performansı düşürmesini engellemek için bağlam bütçenizi kontrol edin.
+              </p>
+
+              {/* Context Length Slider */}
+              <div className="setting-row setting-row-vertical">
+                <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                  <label>Maksimum Bağlam Boyutu (Token)</label>
+                  <span className="text-small" style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>
+                    {localSettings.maxContextLength || 4096} Token
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="512"
+                  max="16384"
+                  step="512"
+                  value={localSettings.maxContextLength || 4096}
+                  onChange={(e) => update('maxContextLength', parseInt(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--accent-primary)', marginTop: '0.5rem' }}
+                />
+                <span className="text-small" style={{ marginTop: '0.25rem', opacity: 0.6 }}>
+                  Daha düşük bağlam boyutu KV önbellek bellek kullanımını azaltır ve hızı artırır.
+                </span>
+              </div>
+
+              {/* Max History Messages */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Sohbet Geçmişi Limiti</label>
+                  <span className="text-small">
+                    Sadece son N mesajı model belleğinde tut (0 = limitsiz).
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  className="setting-input-small"
+                  value={localSettings.maxHistoryMessages ?? 20}
+                  onChange={(e) => update('maxHistoryMessages', parseInt(e.target.value) || 0)}
+                  min="0"
+                  max="100"
+                />
+              </div>
+
+              {/* Auto Context Pruning Toggle */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Otomatik Kırpma (Auto-Pruning)</label>
+                  <span className="text-small">
+                    Bağlam penceresi %80 doluluğa ulaştığında eski mesajları otomatik olarak temizle.
+                  </span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.autoContextPrune ?? true}
+                    onChange={(e) => update('autoContextPrune', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+            </div>
+          )}
 
           {/* API Tab */}
           {activeTab === 'api' && (

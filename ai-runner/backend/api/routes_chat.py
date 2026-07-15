@@ -290,6 +290,13 @@ async def send_chat_message(request: MessageRequest):
 
     # Get session messages for context
     messages = await session_store.get_messages(request.session_id)
+    
+    # Respect prompt pruning: Limit history messages if configured
+    max_history = await session_store.get_setting("max_history_messages", 20)
+    if max_history and max_history > 0:
+        # Keep the latest N messages
+        messages = messages[-max_history:]
+
     msg_list = [{"role": m["role"], "content": m["content"]} for m in messages]
 
     params = InferenceParams(

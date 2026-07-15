@@ -33,6 +33,11 @@ const useSettingsStore = create((set, get) => ({
   draftModelPath: '',         // Speculative decoding draft model path
   draftNGpuLayers: -1,        // GPU layers for draft model (-1 = all)
 
+  // ── Prompt Pruning (Context Management) ──
+  maxContextLength: 4096,     // Max context window in tokens
+  maxHistoryMessages: 20,     // Keep last N messages (0 = unlimited)
+  autoContextPrune: true,     // Auto-prune when context >80% full
+
   // ── Actions ──
 
   /** Load settings from backend */
@@ -64,6 +69,10 @@ const useSettingsStore = create((set, get) => ({
         cacheContextShift: s.cache_context_shift ?? true,
         draftModelPath: s.draft_model_path || '',
         draftNGpuLayers: s.draft_n_gpu_layers ?? -1,
+        // Prompt Pruning
+        maxContextLength: s.max_context_length || 4096,
+        maxHistoryMessages: s.max_history_messages ?? 20,
+        autoContextPrune: s.auto_context_prune ?? true,
         isLoaded: true,
       });
 
@@ -100,6 +109,10 @@ const useSettingsStore = create((set, get) => ({
       cacheContextShift: 'cache_context_shift',
       draftModelPath: 'draft_model_path',
       draftNGpuLayers: 'draft_n_gpu_layers',
+      // Prompt Pruning
+      maxContextLength: 'max_context_length',
+      maxHistoryMessages: 'max_history_messages',
+      autoContextPrune: 'auto_context_prune',
     };
 
     for (const [key, value] of Object.entries(updates)) {

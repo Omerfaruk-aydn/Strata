@@ -21,6 +21,7 @@ export default function ChatConsole() {
   } = useSessionStore();
   const activeModel = useModelStore((s) => s.activeModel);
   const defaultSystemPrompt = useSettingsStore((s) => s.defaultSystemPrompt);
+  const maxContextLength = useSettingsStore((s) => s.maxContextLength) || 4096;
 
   const [input, setInput] = useState('');
   const [showParams, setShowParams] = useState(false);
@@ -33,8 +34,40 @@ export default function ChatConsole() {
     systemPrompt: '',
   });
 
+  const [tokenUsage, setTokenUsage] = useState({
+    total_used: 0,
+    utilization_pct: 0,
+    is_warning: false,
+    is_critical: false,
+  });
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Fetch token budget usage from backend
+  useEffect(() => {
+    if (!activeSessionId || messages.length === 0) {
+      setTokenUsage({ total_used: 0, utilization_pct: 0, is_warning: false, is_critical: false });
+      return;
+    }
+    const fetchBudget = async () => {
+      try {
+        const systemPromptVal = params.systemPrompt || defaultSystemPrompt || '';
+        const res = await fetch(`http://127.0.0.1:8420/api/optimizer/prompt-budget?context_length=${maxContextLength}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(messages.map(m => ({ role: m.role, content: m.content }))),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setTokenUsage(data);
+        }
+      } catch (err) {
+        console.error("Budget fetch error:", err);
+      }
+    };
+    fetchBudget();
+  }, [messages, activeSessionId, maxContextLength, params.systemPrompt, defaultSystemPrompt]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -151,9 +184,22 @@ export default function ChatConsole() {
             ⚙️
           </button>
           {activeModel && (
-            <span className="text-small active-model-badge">
-              🟢 {activeModel.model_id?.split('/').pop() || 'Model'}
-            </span>
+            <>
+              <span className="text-small active-model-badge">
+                🟢 {activeModel.model_id?.split('/').pop() || 'Model'}
+              </span>
+              <div className="context-indicator" title={`Bağlam Kullanımı: %${tokenUsage.utilization_pct || 0} (${tokenUsage.total_used || 0}/${maxContextLength} Token)`}>
+                <span className="text-small" style={{ fontSize: '11px', opacity: 0.8 }}>
+                  🧠 {tokenUsage.total_used || 0} / {maxContextLength} Token
+                </span>
+                <div className="context-bar-bg">
+                  <div
+                    className={`context-bar-fg ${tokenUsage.is_warning ? 'warning' : ''} ${tokenUsage.is_critical ? 'critical' : ''}`}
+                    style={{ width: `${Math.min(100, tokenUsage.utilization_pct || 0)}%` }}
+                  />
+                </div>
+              </div>
+            </>
           )}
         </div>
 

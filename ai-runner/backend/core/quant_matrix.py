@@ -19,13 +19,49 @@ class QuantInfo(BaseModel):
 # ── Quantization Matrix (Section 12) ──
 
 QUANT_MATRIX: List[QuantInfo] = [
+    # ── Ultra Sıkıştırma: I-Matrix Serisi (Importance Matrix) ──────────────
+    # I-Matrix, hangi ağırlıkların kritik olduğunu analiz ederek düşük bitte
+    # çok daha iyi kalite korur. Normal Q2'den belirgin şekilde üstündür.
+    QuantInfo(
+        level="IQ1_S",
+        bits_per_weight=1.56,
+        quality_loss="Çok Belirgin",
+        quality_loss_en="Very Significant",
+        recommended_use="Sadece çok kısıtlı RAM'de (≤6 GB). 70B+ modelleri 10 GB'a indirmek için.",
+        recommended_use_en="Only for very limited RAM (≤6 GB). Fits 70B+ into ~10 GB.",
+    ),
+    QuantInfo(
+        level="IQ2_XXS",
+        bits_per_weight=2.06,
+        quality_loss="Belirgin (I-Matrix ile azaltılmış)",
+        quality_loss_en="Significant (mitigated by I-Matrix)",
+        recommended_use="Çok kısıtlı VRAM — 50B modeli ~14 GB'a indirir. Normal Q2'den çok daha iyi kalite.",
+        recommended_use_en="Very limited VRAM — fits 50B into ~14 GB. Far better than regular Q2.",
+    ),
+    QuantInfo(
+        level="IQ2_XS",
+        bits_per_weight=2.31,
+        quality_loss="Orta-Belirgin",
+        quality_loss_en="Moderate-Significant",
+        recommended_use="Kısıtlı VRAM — IQ2_XXS'ten daha iyi kalite, biraz daha büyük.",
+        recommended_use_en="Limited VRAM — better quality than IQ2_XXS, slightly larger.",
+    ),
+    QuantInfo(
+        level="IQ3_XS",
+        bits_per_weight=3.3,
+        quality_loss="Orta",
+        quality_loss_en="Moderate",
+        recommended_use="Dengeli ultra-sıkıştırma — Q3_K_M'den daha iyi kalite, daha küçük boyut.",
+        recommended_use_en="Balanced ultra-compression — better quality than Q3_K_M, smaller size.",
+    ),
+    # ── Standart K-Quant Serisi ─────────────────────────────────────────────
     QuantInfo(
         level="Q2_K",
         bits_per_weight=2.6,
         quality_loss="Belirgin",
         quality_loss_en="Significant",
-        recommended_use="Sadece VRAM çok kısıtlıysa (son çare)",
-        recommended_use_en="Only when VRAM is severely limited (last resort)",
+        recommended_use="Sadece VRAM çok kısıtlıysa — IQ2_XXS önerilir bunun yerine",
+        recommended_use_en="Only when VRAM is severely limited — prefer IQ2_XXS instead",
     ),
     QuantInfo(
         level="Q3_K_M",
@@ -68,6 +104,7 @@ QUANT_MATRIX: List[QuantInfo] = [
         recommended_use_en="Only for well-resourced systems",
     ),
 ]
+
 
 
 def get_quant_info(level: str) -> Optional[QuantInfo]:

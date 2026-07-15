@@ -248,3 +248,39 @@
   justify-content: center;
   border-radius: var(--radius-lg);
 }
+
+/* Premium Context Budget Indicator */
+.context-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  gap: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hairline);
+}
+
+.context-bar-bg {
+  width: 80px;
+  height: 6px;
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.context-bar-fg {
+  height: 100%;
+  background: var(--color-green, #3fb950);
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.context-bar-fg.warning {
+  background: var(--color-amber, #d29922);
+}
+
+.context-bar-fg.critical {
+  background: var(--color-red, #f85149);
+}
+

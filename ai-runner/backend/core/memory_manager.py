@@ -57,23 +57,35 @@ DEFAULT_CONTEXT_LENGTH = 4096
 
 
 # ── Quantization Size Multipliers ──
-# Approximate bytes per parameter for each quant level
+# Approximate bytes per parameter for each quant level.
+# IQ (Importance Matrix) types use fractional bits — same BPW as name implies
+# but with significantly better quality due to importance-aware quantization.
 QUANT_BPW = {
-    "Q2_K": 2.6,
+    # ── I-Matrix Ultra-Compression (IQ series) ──────────────────────────────
+    "IQ1_S":   1.56,  # ~1.5-bit effective — 70B model fits in ~10 GB
+    "IQ2_XXS": 2.06,  # ~2-bit — 50B fits ~14 GB, far better quality than Q2_K
+    "IQ2_XS":  2.31,  # ~2.3-bit — slightly larger than IQ2_XXS, better quality
+    "IQ3_XS":  3.3,   # ~3.3-bit — better than Q3_K_M at smaller size
+    "IQ3_S":   3.5,   # ~3.5-bit
+    "IQ4_XS":  4.25,  # ~4.25-bit — close to Q4_K_M but smaller
+    "IQ4_NL":  4.5,   # ~4.5-bit non-linear
+    # ── Standard K-Quant Series ─────────────────────────────────────────────
+    "Q2_K":   2.6,
     "Q3_K_S": 3.4,
     "Q3_K_M": 3.9,
     "Q3_K_L": 4.3,
-    "Q4_0": 4.5,
+    "Q4_0":   4.5,
     "Q4_K_S": 4.6,
     "Q4_K_M": 4.8,
-    "Q5_0": 5.5,
+    "Q5_0":   5.5,
     "Q5_K_S": 5.5,
     "Q5_K_M": 5.7,
-    "Q6_K": 6.6,
-    "Q8_0": 8.5,
-    "F16": 16.0,
-    "F32": 32.0,
+    "Q6_K":   6.6,
+    "Q8_0":   8.5,
+    "F16":   16.0,
+    "F32":   32.0,
 }
+
 
 
 def estimate_model_size_mb(
