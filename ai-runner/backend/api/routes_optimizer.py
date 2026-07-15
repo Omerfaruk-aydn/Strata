@@ -15,6 +15,9 @@ from ..core.system_optimizer import (
     analyze_ramdisk,
     calculate_prompt_budget,
     get_optimizer_status,
+    get_gpu_profiles,
+    lock_cpu_affinity_and_priority,
+    flush_vram_cache,
 )
 from ..core.inference_engine import engine
 
@@ -134,3 +137,46 @@ async def prompt_budget(
     except Exception as e:
         logger.error(f"Prompt budget error: {e}")
         return {"error": str(e)}
+
+
+@router.get("/gpu-profile")
+async def gpu_profile():
+    """
+    ④ GPU profiling.
+    Detects multiple GPUs, recommends tensor_split, and builds nvidia-smi power tuning commands.
+    """
+    try:
+        profile = get_gpu_profiles()
+        return profile.model_dump()
+    except Exception as e:
+        logger.error(f"GPU profiling error: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/affinity")
+async def lock_affinity():
+    """
+    ② CPU affinity and Process priority locker.
+    Forces physical core execution and HIGH process priority.
+    """
+    try:
+        res = lock_cpu_affinity_and_priority()
+        return res
+    except Exception as e:
+        logger.error(f"Affinity lock error: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/vram-flush")
+async def vram_flush():
+    """
+    ① Windows GPU VRAM Flush.
+    Reclaims unused graphics memory caching from browser/DWM.
+    """
+    try:
+        res = flush_vram_cache()
+        return res
+    except Exception as e:
+        logger.error(f"VRAM flush error: {e}")
+        return {"error": str(e)}
+

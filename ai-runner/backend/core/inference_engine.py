@@ -71,6 +71,9 @@ class EngineConfig(BaseModel):
     # Smart Context Shifting — avoids full re-eval when context fills
     cache_context_shift: bool = True
 
+    # Multi-GPU support: split weights proportionally (e.g. [0.7, 0.3])
+    tensor_split: Optional[List[float]] = None
+
     @field_validator("kv_cache_type")
     @classmethod
     def validate_kv_type(cls, v: str) -> str:
@@ -128,6 +131,7 @@ class ModelInfo(BaseModel):
     kv_cache_type: str = "f16"
     has_draft_model: bool = False
     cache_context_shift: bool = False
+    tensor_split: Optional[List[float]] = None
 
 
 def _get_physical_cores() -> int:
@@ -262,6 +266,10 @@ class InferenceEngine:
                     "verbose":       False,
                 }
 
+                # Multi-GPU support (tensor_split)
+                if config.tensor_split:
+                    kwargs["tensor_split"] = config.tensor_split
+
                 # Flash Attention — guard: only pass if llama_cpp supports it
                 try:
                     import inspect
@@ -339,6 +347,7 @@ class InferenceEngine:
                     kv_cache_type=config.kv_cache_type,
                     has_draft_model=has_draft,
                     cache_context_shift=config.cache_context_shift,
+                    tensor_split=config.tensor_split,
                 )
 
                 if progress_callback:
@@ -652,6 +661,7 @@ class InferenceEngine:
             "n_threads":           self._config.n_threads or _get_physical_cores(),
             "speculative_decoding": self._draft_model is not None,
             "context_shift":       self._config.cache_context_shift,
+            "tensor_split":        self._config.tensor_split,
         }
 
 

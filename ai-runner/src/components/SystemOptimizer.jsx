@@ -351,11 +351,153 @@ function RamDiskTab() {
   );
 }
 
+// ── Tab: Gelişmiş Donanım Hileleri (Hacks) ───────────────────────────────────
+
+function HacksTab() {
+  const {
+    gpuProfile, fetchGpuProfile,
+    triggerVramFlush, vramFlushResult,
+    lockPriority, isPriorityLocked,
+    isLoading
+  } = useOptimizerStore();
+
+  useEffect(() => {
+    fetchGpuProfile();
+  }, []);
+
+  if (isLoading && !gpuProfile) {
+    return <div className="opt-loading">GPU profilleri analiz ediliyor...</div>;
+  }
+
+  return (
+    <div className="opt-tab-content animate-fade-in">
+      <div className="opt-section-header">
+        <h3>🚀 İleri Düzey Donanım Hileleri</h3>
+        <p className="text-small">
+          Mevcut ekran kartı ve işlemcinizden ekstra güç almak için yazılımsal bypass ve donanım limitleme hilelerini uygulayın.
+        </p>
+      </div>
+
+      <div className="opt-hacks-grid">
+        {/* Hack 1: VRAM Flush */}
+        <div className="opt-hack-card">
+          <div className="opt-hack-card-header">
+            <h4>🧼 Windows VRAM Temizleyici (Flush VRAM)</h4>
+            <span className="opt-badge-pill recommend">Önerilen</span>
+          </div>
+          <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
+            Tauri arayüzü ve tarayıcıların VRAM önbelleğini temizler. Windows'u masaüstü bellek sayfalarını boşaltmaya zorlar.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'auto' }}>
+            <button className="btn btn-secondary btn-sm" onClick={triggerVramFlush}>
+              🧹 Belleği Boşalt (Flush)
+            </button>
+            {vramFlushResult && (
+              <span className="text-small" style={{ color: 'var(--color-green)' }}>
+                ✓ {vramFlushResult.webview_processes_flushed || 0} süreç temizlendi!
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hack 2: CPU Affinity & Priority Lock */}
+        <div className="opt-hack-card">
+          <div className="opt-hack-card-header">
+            <h4>🧵 CPU Çekirdek Kilidi ve Yüksek Öncelik</h4>
+            <span className="opt-badge-pill speed">Hız Artışı</span>
+          </div>
+          <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
+            LLM sürecini sadece fiziksel CPU çekirdeklerine kilitler (Core Affinity) ve işlemci öncelik sınıfını Yüksek düzeye çıkarır.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'auto' }}>
+            <button
+              className={`btn btn-secondary btn-sm ${isPriorityLocked ? 'active' : ''}`}
+              onClick={lockPriority}
+              disabled={isPriorityLocked}
+            >
+              🔒 Çekirdekleri Kilitle & Öncelik Yükselt
+            </button>
+            {isPriorityLocked && (
+              <span className="text-small" style={{ color: 'var(--color-green)' }}>
+                ✓ CPU & Süreç optimize edildi!
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Hack 3: Multi-GPU Splitter */}
+      {gpuProfile && gpuProfile.is_multi_gpu && (
+        <div className="opt-hack-card" style={{ width: '100%' }}>
+          <h4>🔀 Çoklu GPU Birleştirici (Tensor Splitter)</h4>
+          <p className="text-small" style={{ margin: 'var(--space-1) 0 var(--space-3)' }}>
+            Sistemdeki dahili (iGPU) veya harici ikincil ekran kartlarını ana ekran kartınızla birleştirerek model katmanlarını paylaştırır.
+          </p>
+          <div className="opt-gpu-split-container">
+            {gpuProfile.gpus.map((gpu, i) => (
+              <div key={gpu.index} className="opt-gpu-split-bar-item">
+                <div className="opt-gpu-split-label">
+                  <span>🎮 GPU {gpu.index}: {gpu.name}</span>
+                  <span style={{ fontWeight: 'bold', color: 'var(--accent-primary)' }}>
+                    %{(gpuProfile.tensor_split_recommended[i] * 100).toFixed(0)} Oran
+                  </span>
+                </div>
+                <div className="opt-gpu-split-bar-bg">
+                  <div
+                    className="opt-gpu-split-bar-fg"
+                    style={{ width: `${gpuProfile.tensor_split_recommended[i] * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="opt-recommendation" style={{ marginTop: 'var(--space-3)' }}>
+            <span className="opt-rec-icon">⚙️</span>
+            <p>
+              Modelleri yüklerken çıkarım motoru bu oranları otomatik olarak kullanır. Donanım gücünü birleştirmek VRAM sınırınızı artırır.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Hack 4: nvidia-smi power limiting */}
+      {gpuProfile && gpuProfile.powershell_optimization_commands?.length > 0 && (
+        <div className="opt-steps">
+          <h4>❄️ NVIDIA Termal Throttling & Güç Sınırı Yöneticisi</h4>
+          <p className="text-small" style={{ marginBottom: 'var(--space-3)' }}>
+            LLM çıkarımı bellek bant genişliği limitlidir, yüksek çekirdek hızı kartı gereksiz ısıtır. Komutları kopyalayarak <strong>Yönetici PowerShell</strong>'de çalıştırın.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            {gpuProfile.powershell_optimization_commands.map((cmd, idx) => (
+              <CommandBlock
+                key={idx}
+                command={cmd}
+                copyKey={`gpu-cmd-${idx}`}
+                label={`Optimizasyon Adımı ${idx + 1}:`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {gpuProfile?.notes?.length > 0 && (
+        <div className="opt-notes">
+          {gpuProfile.notes.map((note, i) => (
+            <p key={i} className="text-small" style={{ margin: '2px 0', opacity: 0.7 }}>
+              • {note}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export default function SystemOptimizer({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('pagefile');
-  const { status, fetchStatus, isLoading } = useOptimizerStore();
+  const { status, fetchStatus } = useOptimizerStore();
 
   useEffect(() => {
     if (isOpen) fetchStatus();
@@ -367,6 +509,7 @@ export default function SystemOptimizer({ isOpen, onClose }) {
     { id: 'pagefile', label: 'Sanal Bellek', icon: '🧊' },
     { id: 'services', label: 'Servisler',    icon: '🛠️' },
     { id: 'ramdisk',  label: 'RAM Disk',     icon: '⚡' },
+    { id: 'hacks',    label: 'Gelişmiş (Hacks)', icon: '🚀' },
   ];
 
   return (
@@ -416,6 +559,7 @@ export default function SystemOptimizer({ isOpen, onClose }) {
           {activeTab === 'pagefile' && <PagefileTab />}
           {activeTab === 'services' && <ServicesTab />}
           {activeTab === 'ramdisk'  && <RamDiskTab />}
+          {activeTab === 'hacks'    && <HacksTab />}
         </div>
 
         {/* Footer */}

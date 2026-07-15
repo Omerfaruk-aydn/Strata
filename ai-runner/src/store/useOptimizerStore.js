@@ -14,6 +14,9 @@ const useOptimizerStore = create((set, get) => ({
   services: [],         // ServiceInfo[]
   processes: [],        // ProcessInfo[]
   ramdisk: null,        // RamDiskInfo
+  gpuProfile: null,     // GpuProfileResult
+  isPriorityLocked: false,
+  vramFlushResult: null,
   isLoading: false,
   error: null,
   lastFetched: null,
@@ -80,13 +83,54 @@ const useOptimizerStore = create((set, get) => ({
     }
   },
 
-  /** Fetch all data at once */
+  /** ④ Fetch GPU profiles and nvidia-smi power options */
+  fetchGpuProfile: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/gpu-profile`);
+      if (!res.ok) throw new Error('GPU profili alınamadı');
+      const data = await res.json();
+      set({ gpuProfile: data, isLoading: false });
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+    }
+  },
+
+  /** ⑤ Trigger GPU VRAM cache cleaning */
+  triggerVramFlush: async () => {
+    set({ isLoading: true, vramFlushResult: null });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/vram-flush`, { method: 'POST' });
+      if (!res.ok) throw new Error('VRAM temizleme başarısız');
+      const data = await res.json();
+      set({ vramFlushResult: data, isLoading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+      return null;
+    }
+  },
+
+  /** ⑥ Lock CPU Affinity and Priority class to High */
+  lockPriority: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/affinity`, { method: 'POST' });
+      if (!res.ok) throw new Error('Öncelik sabitleme başarısız');
+      set({ isPriorityLocked: true, isLoading: false });
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+    }
+  },
+
+  /** Fetch all data at once including GPU */
   fetchAll: async (modelSizeMb = 0) => {
     await Promise.all([
       get().fetchStatus(),
       get().fetchPagefile(modelSizeMb),
       get().fetchServices(),
       get().fetchRamdisk(modelSizeMb),
+      get().fetchGpuProfile(),
     ]);
   },
 

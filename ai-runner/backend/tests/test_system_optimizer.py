@@ -17,6 +17,9 @@ from backend.core.system_optimizer import (
     analyze_ramdisk,
     calculate_prompt_budget,
     get_optimizer_status,
+    get_gpu_profiles,
+    lock_cpu_affinity_and_priority,
+    flush_vram_cache,
 )
 
 
@@ -101,3 +104,25 @@ class TestSystemOptimizer:
         assert 0 <= status.optimization_score <= 100
         assert status.os_name
         assert len(status.recommendations) >= 1
+
+    def test_gpu_profiles_detection(self):
+        """GPU profiling should return GPU count, Recommended split, and commands."""
+        profile = get_gpu_profiles()
+        assert isinstance(profile.gpus, list)
+        assert isinstance(profile.tensor_split_recommended, list)
+        assert len(profile.tensor_split_recommended) == len(profile.gpus)
+        if len(profile.gpus) > 0:
+            assert sum(profile.tensor_split_recommended) > 0.0
+
+    def test_lock_cpu_affinity_and_priority(self):
+        """Process lock should raise scheduling class or lock affinity cores."""
+        res = lock_cpu_affinity_and_priority()
+        assert "priority" in res
+        assert "affinity" in res
+
+    def test_flush_vram_cache_execution(self):
+        """VRAM flushing should trigger memory cleanup gracefully."""
+        res = flush_vram_cache()
+        assert "status" in res
+        assert "bytes_reclaimed" in res
+
