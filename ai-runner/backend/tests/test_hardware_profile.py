@@ -59,29 +59,41 @@ class TestDiskInfo:
 
 
 class TestCheckVramChange:
-    def test_no_change_returns_none(self):
+    @patch("backend.core.hardware_profile.detect_gpus")
+    def test_no_change_returns_none(self, mock_detect_gpus):
         profile1 = HardwareProfile(
             gpu=GPUInfo(name="RTX", vram_total_mb=8192, vram_free_mb=6000),
             ram=RAMInfo(total_mb=32768, free_mb=20000),
             disk=DiskInfo(type="SSD", free_gb=200),
             cpu=CPUInfo(name="i7", cores=8, threads=16),
+            selected_gpu_index=0,
         )
+        mock_detect_gpus.return_value = [profile1.gpu]
         result = check_vram_change(profile1)
         assert result is None
 
-    def test_detects_significant_drop(self):
+    @patch("backend.core.hardware_profile.detect_gpus")
+    def test_detects_significant_drop(self, mock_detect_gpus):
         # Simulate cached profile with more free VRAM
         old_profile = HardwareProfile(
             gpu=GPUInfo(name="RTX", vram_total_mb=8192, vram_free_mb=7000),
             ram=RAMInfo(total_mb=32768, free_mb=20000),
             disk=DiskInfo(type="SSD", free_gb=200),
             cpu=CPUInfo(name="i7", cores=8, threads=16),
+            selected_gpu_index=0,
         )
-        # Use internal API if available, or just check function signature
-        # (Implementation detail — just verify no crash)
+        new_profile = HardwareProfile(
+            gpu=GPUInfo(name="RTX", vram_total_mb=8192, vram_free_mb=5500),
+            ram=RAMInfo(total_mb=32768, free_mb=20000),
+            disk=DiskInfo(type="SSD", free_gb=200),
+            cpu=CPUInfo(name="i7", cores=8, threads=16),
+            selected_gpu_index=0,
+        )
+        mock_detect_gpus.return_value = [new_profile.gpu]
         result = check_vram_change(old_profile)
-        # No exception should be raised
-        assert result is None or isinstance(result, str)
+        # Signficant drop should return warning message
+        assert result is not None
+        assert "VRAM" in result
 
 
 class TestDetectFunctions:

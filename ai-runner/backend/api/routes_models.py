@@ -20,6 +20,7 @@ from ..core.memory_manager import (
 )
 from ..core.inference_engine import engine, InferenceParams, EngineConfig
 from ..models.model_manager import model_manager, DownloadProgress
+from ..db import session_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/models", tags=["models"])
@@ -230,6 +231,28 @@ async def load_model(model_id: str, request: LoadRequest):
                 detail="Model yerel olarak bulunamadı. Önce indirin."
             )
 
+        # Read saved settings directly from SQLite DB (ensures frontend/backend state sync)
+        db_context_length = await session_store.get_setting("max_context_length")
+        context_length = int(db_context_length) if db_context_length else request.context_length
+
+        db_threads = await session_store.get_setting("n_threads")
+        n_threads = int(db_threads) if (db_threads and db_threads != "null") else request.n_threads
+
+        db_mlock = await session_store.get_setting("use_mlock")
+        use_mlock = (db_mlock == "true") if db_mlock is not None else request.use_mlock
+
+        db_mmap = await session_store.get_setting("use_mmap")
+        use_mmap = (db_mmap == "true") if db_mmap is not None else request.use_mmap
+
+        db_batch = await session_store.get_setting("n_batch")
+        n_batch = int(db_batch) if db_batch else request.n_batch
+
+        db_kv_type = await session_store.get_setting("kv_cache_type")
+        kv_cache_type = db_kv_type if db_kv_type else request.kv_cache_type
+
+        db_flash = await session_store.get_setting("flash_attn")
+        flash_attn = (db_flash == "true") if db_flash is not None else request.flash_attn
+
         # Calculate offload plan if no manual override
         n_gpu_layers = request.n_gpu_layers
         if n_gpu_layers is None:
@@ -242,20 +265,20 @@ async def load_model(model_id: str, request: LoadRequest):
                 file_size_mb=file_size_mb,
                 total_layers=total_layers,
                 hardware=hardware,
-                context_length=request.context_length,
+                context_length=context_length,
             )
             n_gpu_layers = plan.gpu_layers
 
         # Build EngineConfig with all optimizations
         config = EngineConfig(
             n_gpu_layers=n_gpu_layers,
-            context_length=request.context_length,
-            n_batch=request.n_batch,
-            use_mmap=request.use_mmap,
-            use_mlock=request.use_mlock,
-            n_threads=request.n_threads,
-            kv_cache_type=request.kv_cache_type,
-            flash_attn=request.flash_attn,
+            context_length=context_length,
+            n_batch=n_batch,
+            use_mmap=use_mmap,
+            use_mlock=use_mlock,
+            n_threads=n_threads,
+            kv_cache_type=kv_cache_type,
+            flash_attn=flash_attn,
             draft_model_path=request.draft_model_path,
             draft_n_gpu_layers=request.draft_n_gpu_layers,
             cache_context_shift=request.cache_context_shift,
