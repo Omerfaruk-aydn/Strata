@@ -123,6 +123,51 @@ const useOptimizerStore = create((set, get) => ({
     }
   },
 
+  /** ⑦ Apply Windows Best Performance registry tweak */
+  applyWindowsPerformance: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/apply-windows-performance`, { method: 'POST' });
+      if (!res.ok) throw new Error('Performans modu uygulanamadı');
+      const data = await res.json();
+      set({ isLoading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+      return { status: 'error', message: err.message };
+    }
+  },
+
+  /** ⑧ Create Sıfır VRAM .bat launcher */
+  createLauncher: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/create-launcher`, { method: 'POST' });
+      if (!res.ok) throw new Error('Başlatıcı oluşturulamadı');
+      const data = await res.json();
+      set({ isLoading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+      return { status: 'error', message: err.message };
+    }
+  },
+
+  /** ⑨ Apply NVIDIA Sysmem Fallback registry tweak */
+  applyNvidiaTweak: async () => {
+    set({ isLoading: true });
+    try {
+      const res = await fetch(`${API_BASE}/api/optimizer/apply-nvidia-tweak`, { method: 'POST' });
+      if (!res.ok) throw new Error('NVIDIA ayarı uygulanamadı');
+      const data = await res.json();
+      set({ isLoading: false });
+      return data;
+    } catch (err) {
+      set({ error: err.message, isLoading: false });
+      return { status: 'error', message: err.message };
+    }
+  },
+
   /** Fetch all data at once including GPU */
   fetchAll: async (modelSizeMb = 0) => {
     await Promise.all([

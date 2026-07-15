@@ -20,6 +20,9 @@ from backend.core.system_optimizer import (
     get_gpu_profiles,
     lock_cpu_affinity_and_priority,
     flush_vram_cache,
+    apply_windows_performance_mode,
+    create_zero_vram_launcher,
+    apply_nvidia_sysmem_fallback_tweak,
 )
 
 
@@ -125,4 +128,28 @@ class TestSystemOptimizer:
         res = flush_vram_cache()
         assert "status" in res
         assert "bytes_reclaimed" in res
+
+    def test_apply_windows_performance(self):
+        """Perform Windows registry tweaks for performance."""
+        res = apply_windows_performance_mode()
+        assert "status" in res
+        assert "message" in res
+
+    def test_create_launcher(self):
+        """Zero VRAM batch script launcher creation check."""
+        res = create_zero_vram_launcher()
+        assert res["status"] == "ok"
+        assert os.path.exists(res["path"])
+        # Cleanup created file to avoid leaving clutter
+        try:
+            os.remove(res["path"])
+        except Exception:
+            pass
+
+    def test_apply_nvidia_tweak(self):
+        """Nvidia sysmem fallback toggle test."""
+        res = apply_nvidia_sysmem_fallback_tweak()
+        assert "status" in res
+        assert "message" in res
+
 

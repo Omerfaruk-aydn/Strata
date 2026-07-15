@@ -18,6 +18,9 @@ from ..core.system_optimizer import (
     get_gpu_profiles,
     lock_cpu_affinity_and_priority,
     flush_vram_cache,
+    apply_windows_performance_mode,
+    create_zero_vram_launcher,
+    apply_nvidia_sysmem_fallback_tweak,
 )
 from ..core.inference_engine import engine
 
@@ -179,4 +182,44 @@ async def vram_flush():
     except Exception as e:
         logger.error(f"VRAM flush error: {e}")
         return {"error": str(e)}
+
+
+@router.post("/apply-windows-performance")
+async def windows_performance():
+    """
+    Adjust Windows visual settings to Best Performance (Registry).
+    """
+    try:
+        res = apply_windows_performance_mode()
+        return res
+    except Exception as e:
+        logger.error(f"Windows performance tweak error: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/create-launcher")
+async def create_launcher():
+    """
+    Write a baslat_0_vram.bat shortcut script to current folder.
+    """
+    try:
+        res = create_zero_vram_launcher()
+        return res
+    except Exception as e:
+        logger.error(f"Bat script creation error: {e}")
+        return {"error": str(e)}
+
+
+@router.post("/apply-nvidia-tweak")
+async def apply_nvidia_tweak():
+    """
+    Registry tweak for disabling NVIDIA sysmem fallback swap.
+    """
+    try:
+        res = apply_nvidia_sysmem_fallback_tweak()
+        return res
+    except Exception as e:
+        logger.error(f"Nvidia tweak error: {e}")
+        return {"error": str(e)}
+
 

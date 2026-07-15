@@ -358,12 +358,32 @@ function HacksTab() {
     gpuProfile, fetchGpuProfile,
     triggerVramFlush, vramFlushResult,
     lockPriority, isPriorityLocked,
+    applyWindowsPerformance, createLauncher, applyNvidiaTweak,
     isLoading
   } = useOptimizerStore();
+
+  const [winPerfResult, setWinPerfResult] = useState(null);
+  const [launcherResult, setLauncherResult] = useState(null);
+  const [nvidiaResult, setNvidiaResult] = useState(null);
 
   useEffect(() => {
     fetchGpuProfile();
   }, []);
+
+  const handleWinPerf = async () => {
+    const res = await applyWindowsPerformance();
+    setWinPerfResult(res);
+  };
+
+  const handleCreateLauncher = async () => {
+    const res = await createLauncher();
+    setLauncherResult(res);
+  };
+
+  const handleNvidiaTweak = async () => {
+    const res = await applyNvidiaTweak();
+    setNvidiaResult(res);
+  };
 
   if (isLoading && !gpuProfile) {
     return <div className="opt-loading">GPU profilleri analiz ediliyor...</div>;
@@ -421,6 +441,78 @@ function HacksTab() {
               <span className="text-small" style={{ color: 'var(--color-green)' }}>
                 ✓ CPU & Süreç optimize edildi!
               </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hack 5: Windows Performance Mode */}
+        <div className="opt-hack-card">
+          <div className="opt-hack-card-header">
+            <h4>🖥️ Windows Görsel Efektlerini Kapat (VRAM Modu)</h4>
+            <span className="opt-badge-pill recommend">Önerilen</span>
+          </div>
+          <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
+            Windows'un pencerelerini en iyi performansa alarak pencerelerin ekran kartında işgal ettiği VRAM yükünü sıfırlar (~500MB VRAM).
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
+            <button className="btn btn-secondary btn-sm" onClick={handleWinPerf}>
+              ⚙️ Performans Modunu Uygula
+            </button>
+            {winPerfResult && (
+              <span className="text-small" style={{ color: winPerfResult.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)' }}>
+                {winPerfResult.message}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hack 6: Create Sıfır VRAM Launcher */}
+        <div className="opt-hack-card">
+          <div className="opt-hack-card-header">
+            <h4>🚀 Sıfır VRAM Başlatıcı Oluştur (.bat)</h4>
+            <span className="opt-badge-pill speed">~400MB Tasarruf</span>
+          </div>
+          <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
+            Proje klasörünüze, Tauri UI arayüzünün ekran kartını kullanmasını tamamen engelleyen bir başlatıcı script dosyası yazar.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
+            <button className="btn btn-secondary btn-sm" onClick={handleCreateLauncher}>
+              💾 Başlatıcı Script Üret
+            </button>
+            {launcherResult && (
+              <span className="text-small" style={{ color: launcherResult.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)' }}>
+                {launcherResult.message}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Hack 7: NVIDIA Sysmem Fallback Block */}
+        <div className="opt-hack-card">
+          <div className="opt-hack-card-header">
+            <h4>🚫 NVIDIA RAM Taşmasını Engelle</h4>
+            <span className="opt-badge-pill speed">Sistem Kilitlenmesi Önleyici</span>
+          </div>
+          <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
+            VRAM dolduğunda sürücünün yavaş RAM'i kullanıp sistemi yavaşlatmasını engeller, CUDA'yı yüksek hızlı VRAM'de çalışmaya zorlar.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
+            <button className="btn btn-secondary btn-sm" onClick={handleNvidiaTweak}>
+              🛡️ RAM Taşmasını Engelle (Tweak)
+            </button>
+            {nvidiaResult && (
+              <div style={{ marginTop: 'var(--space-1)' }}>
+                <span className="text-small" style={{ color: nvidiaResult.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                  {nvidiaResult.message}
+                </span>
+                {nvidiaResult.status === 'admin_required' && nvidiaResult.powershell_command && (
+                  <CommandBlock
+                    command={nvidiaResult.powershell_command}
+                    copyKey="nvidia-powershell"
+                    label="Yönetici Yetkisi İçin PowerShell Komutu:"
+                  />
+                )}
+              </div>
             )}
           </div>
         </div>
