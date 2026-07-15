@@ -4,7 +4,7 @@ Provides endpoints for system analysis, pagefile recommendations,
 service audit, RAM disk setup, and prompt pruning budget.
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from typing import Optional, List, Dict
 import logging
 
@@ -23,9 +23,14 @@ from ..core.system_optimizer import (
     apply_nvidia_sysmem_fallback_tweak,
 )
 from ..core.inference_engine import engine
+from .auth import require_api_access
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/optimizer", tags=["optimizer"])
+router = APIRouter(
+    prefix="/api/optimizer",
+    tags=["optimizer"],
+    dependencies=[Depends(require_api_access)],
+)
 
 
 @router.get("/status")
@@ -173,8 +178,7 @@ async def lock_affinity():
 @router.post("/vram-flush")
 async def vram_flush():
     """
-    ① Windows GPU VRAM Flush.
-    Reclaims unused graphics memory caching from browser/DWM.
+    Trim AI Runner/WebView helper-process working sets.
     """
     try:
         res = flush_vram_cache()
@@ -213,7 +217,7 @@ async def create_launcher():
 @router.post("/apply-nvidia-tweak")
 async def apply_nvidia_tweak():
     """
-    Registry tweak for disabling NVIDIA sysmem fallback swap.
+    Return safe manual guidance for NVIDIA sysmem fallback configuration.
     """
     try:
         res = apply_nvidia_sysmem_fallback_tweak()
@@ -221,5 +225,3 @@ async def apply_nvidia_tweak():
     except Exception as e:
         logger.error(f"Nvidia tweak error: {e}")
         return {"error": str(e)}
-
-

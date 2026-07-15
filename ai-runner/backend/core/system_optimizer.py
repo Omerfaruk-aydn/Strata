@@ -718,9 +718,9 @@ def lock_cpu_affinity_and_priority() -> Dict[str, Any]:
 
 def flush_vram_cache() -> Dict[str, Any]:
     """
-    Force Windows Desktop Window Manager (DWM) and browsers (WebView2)
-    to flush VRAM caching standby lists.
-    Triggers GC and forces system processes memory optimization.
+    Trim working sets for AI Runner/WebView helper processes.
+    This can reduce committed RAM and may let the graphics driver reclaim
+    cached resources, but it does not claim a measurable VRAM recovery.
     """
     import gc
     gc.collect()
@@ -742,7 +742,7 @@ def flush_vram_cache() -> Dict[str, Any]:
             try:
                 name = proc.info["name"].lower() if proc.info["name"] else ""
                 # WebView2 / Tauri runtime helper processes
-                if "webview" in name or "tauri" in name or "msedge" in name:
+                if "webview" in name or "tauri" in name or "ai runner" in name:
                     h_process = kernel32.OpenProcess(0x1F0FFF, False, proc.info["pid"])
                     if h_process:
                         # Empty working set forces memory page flush
@@ -751,7 +751,8 @@ def flush_vram_cache() -> Dict[str, Any]:
                         kernel32.CloseHandle(h_process)
             except Exception:
                 pass
-        res["bytes_reclaimed"] = reclaimed * 1024 * 1024  # estimated
+        # EmptyWorkingSet does not report reclaimed bytes; do not fabricate one.
+        res["bytes_reclaimed"] = 0
         res["webview_processes_flushed"] = reclaimed
     except Exception as e:
         res["error"] = str(e)
@@ -779,10 +780,10 @@ def apply_windows_performance_mode() -> Dict[str, Any]:
         winreg.SetValueEx(key, "VisualFXSetting", 0, winreg.REG_DWORD, 2)
         winreg.CloseKey(key)
 
-        # Trigger shell refresh to notify DWM
-        cmd = "powershell -NonInteractive -Command \"Stop-Process -Name explorer -Force\""
-        subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
-        res["message"] = "Performans modu uygulandı. Değişikliklerin etkili olması için Windows Gezgini (Explorer) yeniden başlatıldı."
+        res["message"] = (
+            "Performans modu kaydedildi. Değişiklikler bir sonraki oturum açılışında "
+            "veya kullanıcı tarafından yeniden başlatılan Explorer sonrasında uygulanır."
+        )
     except Exception as e:
         logger.error(f"Failed to apply Windows performance mode registry tweak: {e}")
         res["status"] = "error"
@@ -791,31 +792,57 @@ def apply_windows_performance_mode() -> Dict[str, Any]:
     return res
 
 
-def create_zero_vram_launcher() -> Dict[str, Any]:
+def create_zero_vram_launcher(
+    target_dir: Optional[str] = None,
+    desktop_executable: Optional[str] = None,
+) -> Dict[str, Any]:
     """
-    Creates a 'baslat_0_vram.bat' script in the project directory that
-    launches Tauri/WebView2 with hardware acceleration disabled.
-    Saves ~300-600MB VRAM on low-end systems.
+    Create a launcher that disables WebView2 hardware acceleration.
+    Packaged builds launch the installed desktop executable; development
+    builds retain the npm command for backwards compatibility.
     """
     res = {"status": "ok", "message": "Sıfır VRAM Başlatıcı (.bat) başarıyla oluşturuldu."}
     
-    # We write it to c:\Strata\ai-runner\baslat_0_vram.bat
-    project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    desktop_executable = desktop_executable or os.environ.get("AI_RUNNER_DESKTOP_EXE")
+    if target_dir:
+        project_dir = target_dir
+    elif desktop_executable:
+        desktop_dir = os.path.join(os.path.expanduser("~"), "Desktop")
+        project_dir = desktop_dir if os.path.isdir(desktop_dir) else os.path.join(
+            os.path.expanduser("~"), ".ai-runner"
+        )
+    else:
+        project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    os.makedirs(project_dir, exist_ok=True)
     bat_path = os.path.join(project_dir, "baslat_0_vram.bat")
+
+    if os.path.exists(bat_path):
+        return {
+            "status": "exists",
+            "message": "Başlatıcı zaten var; mevcut dosyanın üzerine yazılmadı.",
+            "path": bat_path,
+        }
+
+    launch_command = (
+        f'start "" "{desktop_executable}"'
+        if desktop_executable
+        else "npm run dev"
+    )
 
     content = (
         "@echo off\n"
-        "echo 🚀 AI Runner - Sifir VRAM Modu Baslatiliyor...\n"
+        "chcp 65001 >nul\n"
+        "echo AI Runner - Sifir VRAM Modu Baslatiliyor...\n"
         "echo -----------------------------------------------\n"
         "echo [INFO] Bu modda Tauri arayuzu tamamen CPU ile cizilir.\n"
-        "echo [INFO] WebView2 VRAM kullanimi %100 engellenir (~400MB tasarruf).\n"
+        "echo [INFO] WebView2 VRAM kullanimi %%100 engellenir (~400MB tasarruf).\n"
         "echo -----------------------------------------------\n\n"
         ":: WebView2 GPU engelleme degiskenleri\n"
         "set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--disable-gpu --disable-gpu-compositing\n"
         "set TAURI_DISABLE_GPU=1\n"
         "set TAURI_FORCE_CPU=1\n\n"
         ":: Uygulamayi baslat\n"
-        "npm run dev\n"
+        f"{launch_command}\n"
     )
 
     try:
@@ -832,42 +859,21 @@ def create_zero_vram_launcher() -> Dict[str, Any]:
 
 def apply_nvidia_sysmem_fallback_tweak() -> Dict[str, Any]:
     """
-    Registry Tweak: Configure NVIDIA CUDA System Memory Fallback policy
-    to 'Prefer CUDA Error' instead of slow RAM swapping.
-    Forces LLM execution to remain in ultra-fast VRAM or fail clean.
+    Return safe guidance for NVIDIA's CUDA system-memory fallback setting.
+    Driver registry keys are intentionally not written because their behavior
+    is undocumented and differs across driver versions.
     """
-    res = {"status": "ok", "message": "NVIDIA RAM taşma koruması etkinleştirildi."}
     if not IS_WINDOWS:
-        res["status"] = "unsupported_os"
-        res["message"] = "Bu ayar sadece Windows sistemlerinde geçerlidir."
-        return res
+        return {
+            "status": "unsupported_os",
+            "message": "Bu ayar yalnızca NVIDIA sürücülü Windows sistemlerinde geçerlidir.",
+        }
 
-    try:
-        # Tweak NVIDIA CUDA driver parameter in registry to prevent sysmem fallback
-        # Key: HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers
-        # Value: CUDA_sysmem_fallback_policy = 1 (Disabled)
-        # Note: Requires Administrator or write access to HKLM. If failed, we fall back to generating command.
-        import winreg
-        try:
-            key_path = r"SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path, 0, winreg.KEY_SET_VALUE)
-            # 1 = Disable sysmem fallback
-            winreg.SetValueEx(key, "CudaSysmemFallbackPolicy", 0, winreg.REG_DWORD, 1)
-            winreg.CloseKey(key)
-        except PermissionError:
-            # If no admin permissions, create PowerShell command to let user apply it
-            res["status"] = "admin_required"
-            res["message"] = "Bu ayar için Yönetici yetkisi gereklidir."
-            res["powershell_command"] = (
-                "Start-Process powershell -Verb runAs -ArgumentList "
-                "'-NoExit -Command \"New-ItemProperty -Path ''HKLM:\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers'' "
-                "-Name ''CudaSysmemFallbackPolicy'' -Value 1 -PropertyType DWord -Force\"'"
-            )
-    except Exception as e:
-        logger.error(f"NVIDIA sysmem fallback registry tweak failed: {e}")
-        res["status"] = "error"
-        res["message"] = f"NVIDIA Registry tweak hatası: {str(e)}"
-
-    return res
-
-
+    return {
+        "status": "manual_required",
+        "message": (
+            "NVIDIA Denetim Masası > 3D Ayarlarını Yönet bölümündeki CUDA sistem "
+            "belleği geri dönüş politikasını donanımınıza göre elle yapılandırın. "
+            "AI Runner belgesiz bir sürücü registry anahtarı değiştirmedi."
+        ),
+    }

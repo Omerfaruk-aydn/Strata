@@ -1,191 +1,176 @@
-# AI Runner — Yerel LLM Çalıştırma Platformu
+# AI Runner
 
-<div align="center">
-  <h3>🤖 Kısıtlı Donanımda Büyük Dil Modellerini Çalıştırın</h3>
-  <p>GPU/RAM/Disk akıllı katman dağıtımı · OpenAI uyumlu API · Tam offline</p>
-</div>
+AI Runner, GGUF biçimindeki büyük dil modellerini yerel donanımda çalıştırmak için geliştirilmiş React, FastAPI, llama.cpp ve Tauri tabanlı bir masaüstü uygulamasıdır. Model çıkarımı çevrimdışı çalışır; yalnızca Hugging Face araması ve model indirme işlemleri ağ erişimi gerektirir.
 
----
+## Öne çıkan özellikler
 
-## 🚀 Özellikler
+- Hugging Face üzerinde gerçek GGUF araması; tek dosyalı quant seçimi, devam ettirilebilir HTTP Range indirme, gerçek hız/ETA ve iptal desteği
+- İndirme öncesi disk/önbellek sınırı kontrolü, GGUF magic doğrulaması ve SHA-256 kayıtları
+- GPU/RAM katman planlama, ana GPU seçimi ve çoklu GPU `tensor_split` desteği
+- KV cache quantization, Flash Attention, context shifting ve prompt lookup decoding
+- Kesilebilir token akışı, sohbet kalıcılığı ve Markdown/JSON dışa aktarma
+- OpenAI uyumlu `/v1/chat/completions` ve `/v1/models` uçları; gerçek token kullanımı ve bitiş nedeni
+- WebSocket tabanlı GPU, VRAM, RAM ve üretim telemetrisi
+- İsteğe bağlı Bearer/API-key koruması, tarayıcı origin kontrolü ve güvenli loopback varsayılanı
+- Python backend'i ve CUDA çalışma zamanı DLL'lerini içeren Tauri 2 Windows paketi
 
-| Özellik | Durum |
-|---------|-------|
-| 🔍 HuggingFace Hub model arama | ✅ |
-| 📥 Devam ettirilebilir model indirme | ✅ |
-| 🧠 GPU/RAM/Disk akıllı offload planlaması | ✅ |
-| 🟢🟡🔴 Uyumluluk rozetleri | ✅ |
-| 💬 Gerçek zamanlı token akışı (SSE) | ✅ |
-| 📊 WebSocket telemetri paneli | ✅ |
-| 🌙 Karanlık/Aydınlık tema | ✅ |
-| 🇹🇷🇬🇧 Türkçe/İngilizce arayüz | ✅ |
-| 💾 Sohbet geçmişi (SQLite) | ✅ |
-| 📤 Markdown/JSON dışa aktarma | ✅ |
-| ⚙️ OpenAI uyumlu API | ✅ |
-| ⌨️ Klavye kısayolları | ✅ |
+## Proje yapısı
 
-## 🏗️ Mimari
-
-```
+```text
 ai-runner/
-├── backend/                    # Python FastAPI sunucusu
-│   ├── core/
-│   │   ├── hardware_profile.py   # GPU/CPU/RAM/Disk tespiti
-│   │   ├── memory_manager.py     # 6-adım offload planlama algoritması
-│   │   ├── quant_matrix.py       # Quantization karar matrisi
-│   │   ├── model_loader.py       # GGUF dosya doğrulama
-│   │   └── inference_engine.py   # llama-cpp-python wrapper
-│   ├── models/
-│   │   └── model_manager.py      # HuggingFace Hub entegrasyonu
-│   ├── api/
-│   │   ├── routes_models.py      # Model yönetimi API
-│   │   ├── routes_chat.py        # OpenAI uyumlu chat API
-│   │   ├── routes_settings.py    # Ayarlar API
-│   │   └── ws_telemetry.py       # WebSocket telemetri
-│   ├── db/
-│   │   ├── schema.sql            # SQLite şeması
-│   │   └── session_store.py      # Async DB katmanı
-│   ├── tests/                    # 96 birim test
-│   └── main.py                   # FastAPI uygulama
-│
-├── src/                        # React 18 + Vite arayüzü
-│   ├── components/
-│   │   ├── ModelShelf.jsx        # Sol panel: model rafı
-│   │   ├── ModelCard.jsx         # Model kartı + rozet
-│   │   ├── ChatConsole.jsx       # Merkez: sohbet konsolu
-│   │   ├── MessageBubble.jsx     # Markdown + kod vurgulama
-│   │   ├── SessionList.jsx       # Sohbet geçmiş listesi
-│   │   ├── TelemetryPanel.jsx    # Sağ panel: telemetri
-│   │   ├── LayerDistributionBar  # Katman dağılım barı
-│   │   ├── HardwareCard.jsx      # Donanım bilgisi
-│   │   └── SettingsModal.jsx     # Ayarlar modali
-│   ├── store/
-│   │   ├── useModelStore.js      # Model state yönetimi
-│   │   ├── useSessionStore.js    # Sohbet state yönetimi
-│   │   ├── useTelemetryStore.js  # WebSocket telemetri
-│   │   ├── useSettingsStore.js   # Kullanıcı ayarları
-│   │   └── useHardwareStore.js   # Donanım profili
-│   ├── i18n/
-│   │   ├── tr.json               # Türkçe çeviriler
-│   │   ├── en.json               # İngilizce çeviriler
-│   │   └── useTranslation.js     # i18n hook
-│   └── styles/
-│       ├── tokens.css            # Design token sistemi
-│       └── global.css            # Global stiller
-│
-└── src-tauri/                  # Tauri 2.0 kabuk (Rust)
-    ├── src/main.rs               # Pencere + sidecar yönetimi
-    └── tauri.conf.json           # Tauri konfigürasyonu
+├── backend/
+│   ├── api/                 FastAPI rotaları, kimlik doğrulama ve WebSocket
+│   ├── core/                çıkarım, donanım, bellek ve sistem optimizasyonu
+│   ├── db/                  SQLite şeması ve asenkron veri erişimi
+│   ├── models/              Hugging Face indirme ve yerel model kütüphanesi
+│   └── tests/               birim ve API bütünleşme testleri
+├── scripts/                 sidecar, duman testi ve masaüstü derleme betikleri
+├── src/                     React 18 + Zustand kullanıcı arayüzü
+├── src-tauri/               Tauri/Rust süreç ve paketleme katmanı
+├── backend_sidecar.py       dondurulmuş backend giriş noktası
+└── package.json             frontend ve masaüstü komutları
 ```
 
-## ⚡ Hızlı Başlangıç
+## Gereksinimler
 
-### 1. Backend'i Başlatın
+- Python 3.11 veya 3.12
+- Node.js 20 veya üzeri
+- Model boyutuna uygun RAM ve disk alanı; 16 GB RAM önerilir
+- İsteğe bağlı NVIDIA GPU ve hedef CUDA sürümüyle uyumlu `llama-cpp-python` wheel'i
+- Masaüstü paketi için Rust stable, MSVC C++ Build Tools ve WebView2
 
-```bash
-# Sanal ortam oluşturun (önerilir)
-python -m venv .venv
-.venv\Scripts\activate
+Python çalışma zamanı sürümleri [backend/requirements.txt](backend/requirements.txt) içinde sabitlenmiştir. CUDA, Metal veya CPU hedefinize uygun `llama-cpp-python==0.3.34` paketini seçili Python ortamına kurun; masaüstü betiği bu seçimi sidecar ortamına taşır.
 
-# Bağımlılıkları kurun
-pip install -r backend/requirements.txt
+## Geliştirme kurulumu
 
-# Sunucuyu başlatın
+PowerShell:
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r backend\requirements-dev.txt
+
+npm ci
+```
+
+Backend ve frontend'i iki ayrı terminalde başlatın:
+
+```powershell
 python -m backend.main
-# → http://127.0.0.1:8420
 ```
 
-### 2. Frontend'i Başlatın
-
-```bash
-npm install
+```powershell
 npm run dev
-# → http://localhost:5173
 ```
 
-### 3. (İsteğe Bağlı) Tauri Masaüstü Uygulaması
+Varsayılan adresler:
+
+- Arayüz: `http://localhost:5173`
+- API: `http://127.0.0.1:8420`
+- OpenAPI: `http://127.0.0.1:8420/docs`
+
+Backend farklı bir portta başlatılabilir:
+
+```powershell
+python -m backend.main --host 127.0.0.1 --port 9000
+```
+
+## Masaüstü paketi
+
+```powershell
+# PyInstaller sidecar'ını oluştur
+npm run sidecar:build
+
+# Dondurulmuş .exe'yi boş bir portta başlatıp HTTP sağlık kontrolü yap
+npm run sidecar:smoke
+
+# Frontend + sidecar + Tauri release paketleri
+npm run desktop:build
+```
+
+`sidecar:build`, çağrıldığı Python ortamındaki seçilmiş llama.cpp wheel'ini korur, gerekli runtime paketlerini doğrular, NVIDIA CUDA DLL'lerini pakete ekler ve çözülemeyen native kütüphane varsa derlemeyi durdurur. Üretilen kurucular `src-tauri/target/release/bundle/` altında bulunur.
+
+## Test ve kalite kapıları
+
+```powershell
+# 175 test ve en az %70 kaynak-kodu kapsamı
+python -m pytest backend\tests -q --cov=backend --cov-config=.coveragerc --cov-report=term-missing
+
+# Frontend üretim derlemesi ve bağımlılık denetimi
+npm audit --audit-level=moderate
+npm run build
+
+# Rust/Tauri derleme denetimi
+cargo check --manifest-path src-tauri\Cargo.toml --locked
+```
+
+Doğrulanan mevcut sonuç: **175 test geçti, backend kaynak kapsamı %74,5, npm ve doğrudan Python bağımlılıklarında bilinen güvenlik açığı 0**. Aynı kontroller [.github/workflows/ci.yml](../.github/workflows/ci.yml) üzerinden Windows CI'da çalışır.
+
+## API güvenliği
+
+API varsayılan olarak yalnızca `127.0.0.1` üzerinde dinler. Ayarlardan bir API anahtarı tanımlandığında tüm `/api/*`, `/v1/*` ve telemetri WebSocket erişimleri korunur.
 
 ```bash
-# Rust ve Tauri CLI kurulu olmalı
-npm run tauri dev
+curl http://127.0.0.1:8420/v1/models \
+  -H "Authorization: Bearer YOUR_API_KEY"
 ```
 
-## 🧪 Testler
+Loopback dışındaki bir adrese bağlanmak için hem "Yerel Ağ Erişimine İzin Ver" seçeneği hem de boş olmayan bir API anahtarı zorunludur. Anahtar ortam değişkeniyle de verilebilir:
+
+```powershell
+$env:AI_RUNNER_API_KEY = "uzun-rastgele-bir-anahtar"
+python -m backend.main --host 0.0.0.0 --allow-network
+```
+
+Host veya port değişikliği çalışan bağlantıyı kesmez; bir sonraki uygulama açılışında uygulanır.
+
+## OpenAI uyumlu örnek
+
+Önce arayüzden yerel bir modeli yükleyin:
 
 ```bash
-# Tüm testleri çalıştır
-python -m pytest backend/tests/ -v --asyncio-mode=auto
-
-# Coverage raporu
-python -m pytest backend/tests/ --cov=backend --cov-report=term-missing
-
-# Sadece belirli testler
-python -m pytest backend/tests/test_memory_manager.py -v
+curl http://127.0.0.1:8420/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "model": "local-model",
+    "messages": [{"role": "user", "content": "Merhaba!"}],
+    "max_tokens": 256,
+    "stream": true,
+    "stream_options": {"include_usage": true}
+  }'
 ```
 
-**Test Sonuçları:** 96/96 ✅
+API anahtarı yapılandırılmadıysa `Authorization` başlığı gerekli değildir.
 
-| Modül | Testler | Durum |
-|-------|---------|-------|
-| Hardware Profile | 13 | ✅ |
-| Memory Manager | 39 | ✅ |
-| Inference Engine | 19 | ✅ |
-| Session Store | 25 | ✅ |
+## Veri konumları
 
-## ⌨️ Klavye Kısayolları
+- SQLite ve loglar: `%USERPROFILE%\.ai-runner\`
+- Varsayılan modeller: `%USERPROFILE%\.ai-runner\models\`
+- İndirme sırasında kısmi dosya: `*.gguf.part`
+- Frontend API bağlantı ayarı: WebView/localStorage
+
+## Bilinen sınırlar
+
+- Çok parçalı/sharded GGUF depoları henüz indirilmez; tek dosyalı bir quant seçilmelidir.
+- Spekülatif mod ikinci bir draft modeli yüklemez; llama.cpp'nin desteklediği prompt lookup decoding kullanılır.
+- Model dosyaları ve oluşturulan sidecar ikilileri Git'e alınmaz.
+
+## Klavye kısayolları
 
 | Kısayol | İşlev |
-|---------|-------|
+|---|---|
 | `Ctrl+N` | Yeni sohbet |
-| `Ctrl+K` | Model arama |
-| `Ctrl+,` | Ayarlar |
-| `Ctrl+B` | Sol panel aç/kapat |
-| `Ctrl+.` | Telemetri paneli aç/kapat |
+| `Ctrl+K` | Model aramasına odaklan |
+| `Ctrl+,` | Ayarları aç |
+| `Ctrl+Shift+O` | Sistem optimizasyonunu aç |
+| `Ctrl+B` | Sol paneli aç/kapat |
+| `Ctrl+.` | Telemetri panelini aç/kapat |
 | `Enter` | Mesaj gönder |
 | `Shift+Enter` | Yeni satır |
 | `Esc` | Üretimi durdur |
 
-## 🔌 API
+## Lisans
 
-OpenAI uyumlu endpoint:
-
-```bash
-# Sohbet tamamlama
-curl http://127.0.0.1:8420/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "TheBloke/Llama-3-8B-GGUF",
-    "messages": [{"role": "user", "content": "Merhaba!"}],
-    "stream": true
-  }'
-
-# Model listesi
-curl http://127.0.0.1:8420/v1/models
-
-# Donanım profili
-curl http://127.0.0.1:8420/api/hardware/profile
-
-# Model arama
-curl http://127.0.0.1:8420/api/models/search?q=llama
-```
-
-## 🗺️ Yol Haritası
-
-- [ ] **Faz 6:** Tauri sidecar ile tam masaüstü paketleme
-- [ ] **Faz 7:** Çoklu GPU desteği (Round-robin dengeleme)
-- [ ] **Faz 8:** Prompt şablonları ve RAG entegrasyonu
-- [ ] **Faz 9:** Plugin sistemi
-
-## 📋 Teknik Gereksinimler
-
-- **Python:** 3.11+
-- **Node.js:** 18+
-- **RAM:** Min 8 GB (16 GB önerilir)
-- **Disk:** Model başına 2–70 GB
-- **GPU:** İsteğe bağlı (NVIDIA CUDA destekli önerilir)
-
----
-
-<div align="center">
-  <sub>AI Runner Kurumsal Spesifikasyon v3.0'a göre oluşturulmuştur</sub>
-</div>
+MIT

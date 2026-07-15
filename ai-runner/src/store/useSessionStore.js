@@ -6,8 +6,7 @@
 
 import { create } from 'zustand';
 import useTelemetryStore from './useTelemetryStore';
-
-const API_BASE = 'http://127.0.0.1:8420';
+import { apiFetch, readSse } from '../api/client';
 
 const useSessionStore = create((set, get) => ({
   // ── State ──
@@ -18,6 +17,7 @@ const useSessionStore = create((set, get) => ({
   streamingContent: '',
   streamingTokens: 0,
   streamingSpeed: 0,
+  stopRequested: false,
   error: null,
 
   // ── Computed ──
@@ -31,8 +31,7 @@ const useSessionStore = create((set, get) => ({
   /** Fetch all sessions */
   fetchSessions: async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/sessions`);
-      if (!res.ok) throw new Error('Oturumlar yüklenemedi');
+      const res = await apiFetch('/api/sessions');
       const data = await res.json();
       set({ sessions: data.sessions || [] });
     } catch (err) {
@@ -43,12 +42,11 @@ const useSessionStore = create((set, get) => ({
   /** Create a new session */
   createSession: async (title = 'Yeni Sohbet', modelId = null) => {
     try {
-      const res = await fetch(`${API_BASE}/api/sessions`, {
+      const res = await apiFetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, model_id: modelId }),
       });
-      if (!res.ok) throw new Error('Oturum oluşturulamadı');
       const session = await res.json();
 
       set((state) => ({
@@ -68,8 +66,7 @@ const useSessionStore = create((set, get) => ({
   selectSession: async (sessionId) => {
     set({ activeSessionId: sessionId, messages: [], error: null });
     try {
-      const res = await fetch(`${API_BASE}/api/sessions/${sessionId}`);
-      if (!res.ok) throw new Error('Oturum yüklenemedi');
+      const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
       const data = await res.json();
       set({ messages: data.messages || [] });
     } catch (err) {
@@ -80,7 +77,7 @@ const useSessionStore = create((set, get) => ({
   /** FR-703: Rename a session */
   renameSession: async (sessionId, title) => {
     try {
-      await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
+      await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title }),
@@ -102,7 +99,7 @@ const useSessionStore = create((set, get) => ({
 
     const pinned = !session.pinned;
     try {
-      await fetch(`${API_BASE}/api/sessions/${sessionId}`, {
+      await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pinned }),
@@ -120,7 +117,7 @@ const useSessionStore = create((set, get) => ({
   /** FR-703: Delete a session */
   deleteSession: async (sessionId) => {
     try {
-      await fetch(`${API_BASE}/api/sessions/${sessionId}`, { method: 'DELETE' });
+      await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
       set((state) => {
         const sessions = state.sessions.filter(s => s.id !== sessionId);
         const activeSessionId = state.activeSessionId === sessionId
@@ -158,11 +155,12 @@ const useSessionStore = create((set, get) => ({
       streamingContent: '',
       streamingTokens: 0,
       streamingSpeed: 0,
+      stopRequested: false,
       error: null,
     }));
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat`, {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -177,94 +175,80 @@ const useSessionStore = create((set, get) => ({
         }),
       });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
       let fullContent = '';
+      let receivedTerminalEvent = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          try {
-            const data = JSON.parse(line.slice(6));
-
-            if (data.type === 'token') {
-              fullContent += data.content;
-              set({
-                streamingContent: fullContent,
-                streamingTokens: data.tokens_generated || 0,
-                streamingSpeed: data.tokens_per_sec || 0,
-              });
-              // Forward metric to telemetry store dynamically
-              useTelemetryStore.getState().updateGenerationMetrics(data.tokens_per_sec || 0, 0);
-            } else if (data.type === 'done') {
-              const result = data.result || {};
-              const assistantMsg = {
-                id: Date.now() + 1,
-                role: 'assistant',
-                content: fullContent,
-                timestamp: new Date().toISOString(),
-                tokens_generated: result.tokens_generated || 0,
-              };
-              set((state) => ({
-                messages: [...state.messages, assistantMsg],
-                isGenerating: false,
-                streamingContent: '',
-              }));
-              // Forward final token/sec and TTFT to telemetry store
-              useTelemetryStore.getState().updateGenerationMetrics(
-                result.tokens_per_sec || 0,
-                result.ttft_ms || 0
-              );
-            } else if (data.type === 'error') {
-              set({ error: data.error, isGenerating: false, streamingContent: '' });
-            }
-          } catch (e) { /* skip invalid SSE data */ }
+      for await (const data of readSse(res)) {
+        if (data.type === 'token') {
+          fullContent += data.content;
+          set({
+            streamingContent: fullContent,
+            streamingTokens: data.tokens_generated || 0,
+            streamingSpeed: data.tokens_per_sec || 0,
+          });
+          useTelemetryStore.getState().updateGenerationMetrics(data.tokens_per_sec || 0, 0);
+        } else if (data.type === 'done') {
+          receivedTerminalEvent = true;
+          const result = data.result || {};
+          if (fullContent) {
+            const assistantMsg = {
+              id: globalThis.crypto?.randomUUID?.() || Date.now() + 1,
+              role: 'assistant',
+              content: fullContent,
+              timestamp: new Date().toISOString(),
+              tokens_generated: result.tokens_generated || 0,
+            };
+            set((state) => ({ messages: [...state.messages, assistantMsg] }));
+          }
+          set({
+            isGenerating: false,
+            stopRequested: false,
+            streamingContent: '',
+          });
+          useTelemetryStore.getState().updateGenerationMetrics(
+            result.tokens_per_sec || 0,
+            result.ttft_ms || 0
+          );
+        } else if (data.type === 'error') {
+          receivedTerminalEvent = true;
+          throw new Error(data.error || 'Üretim sırasında bilinmeyen bir hata oluştu.');
         }
       }
+
+      if (!receivedTerminalEvent) {
+        throw new Error('Yanıt akışı tamamlanmadan bağlantı kapandı.');
+      }
     } catch (err) {
-      set({ error: err.message, isGenerating: false, streamingContent: '' });
+      set({
+        error: err.message,
+        isGenerating: false,
+        stopRequested: false,
+        streamingContent: '',
+      });
+      try {
+        const syncResponse = await apiFetch(`/api/sessions/${encodeURIComponent(activeSessionId)}`);
+        const session = await syncResponse.json();
+        set({ messages: session.messages || [], error: err.message });
+      } catch {
+        // Preserve the original stream error if re-sync is unavailable.
+      }
     }
   },
 
   /** FR-303: Stop current generation */
   stopGeneration: async () => {
     try {
-      await fetch(`${API_BASE}/api/chat/stop`, { method: 'POST' });
-
-      // Finalize the streaming content as a message
-      const { streamingContent } = get();
-      if (streamingContent) {
-        const assistantMsg = {
-          id: Date.now(),
-          role: 'assistant',
-          content: streamingContent + '\n\n*[Üretim durduruldu]*',
-          timestamp: new Date().toISOString(),
-        };
-        set((state) => ({
-          messages: [...state.messages, assistantMsg],
-          isGenerating: false,
-          streamingContent: '',
-        }));
-      } else {
-        set({ isGenerating: false, streamingContent: '' });
-      }
+      set({ stopRequested: true });
+      await apiFetch('/api/chat/stop', { method: 'POST' });
     } catch (err) {
-      set({ isGenerating: false, error: err.message });
+      set({ stopRequested: false, error: err.message });
     }
   },
 
   /** FR-405: Export session */
   exportSession: async (sessionId, format = 'markdown') => {
     try {
-      const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/export/${format}`);
+      const res = await apiFetch(`/api/sessions/${encodeURIComponent(sessionId)}/export/${format}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

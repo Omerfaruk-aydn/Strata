@@ -1,0 +1,12 @@
+# Runtime dependencies that are independent of the llama.cpp compute backend.
+# These are the versions used by the verified release build.
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
+aiosqlite==0.22.1
+psutil==7.2.2
+huggingface-hub==1.22.0
+websockets==15.0.1
+python-multipart==0.0.32
+httpx==0.28.1
+nvidia-ml-py==13.610.43

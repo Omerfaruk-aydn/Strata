@@ -4,7 +4,7 @@
  * Implements FR-103, FR-104.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from '../i18n/useTranslation';
 import useModelStore from '../store/useModelStore';
 import useSettingsStore from '../store/useSettingsStore';
@@ -33,14 +33,30 @@ const BADGE_MAP = {
 
 export default function ModelCard({ model, isLocal = false, onSelect }) {
   const t = useTranslation();
-  const { downloadModel, loadModel, unloadModel, deleteModel, activeModel, downloadProgress, loadingModelId } = useModelStore();
+  const { downloadModel, cancelDownload, loadModel, unloadModel, deleteModel, activeModel, downloadProgress, loadingModelId } = useModelStore();
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const availableQuants = model.available_quants?.length ? model.available_quants : ['Q4_K_M'];
+  const preferredQuant = model.downloaded_quant
+    || (availableQuants.includes('Q4_K_M') ? 'Q4_K_M' : availableQuants[0]);
+  const [selectedQuant, setSelectedQuant] = useState(preferredQuant);
+
+  useEffect(() => {
+    if (!availableQuants.includes(selectedQuant)) setSelectedQuant(preferredQuant);
+  }, [availableQuants, preferredQuant, selectedQuant]);
+
+  useEffect(() => {
+    if (downloadProgress[model.id]?.quant) {
+      setSelectedQuant(downloadProgress[model.id].quant);
+    }
+  }, [downloadProgress, model.id]);
 
   const badge = BADGE_MAP[model.compatibility] || BADGE_MAP.compatible;
-  const isActive = activeModel?.model_id === model.id;
+  const isActive = isLocal
+    ? activeModel?.model_path === model.local_path
+    : activeModel?.model_id === model.id;
   const isLoading = loadingModelId === model.id;
   const progress = downloadProgress[model.id];
-  const isDownloading = progress?.status === 'downloading';
+  const isDownloading = ['downloading', 'cancelling'].includes(progress?.status);
 
   const handleLoad = async () => {
     try {
@@ -55,15 +71,17 @@ export default function ModelCard({ model, isLocal = false, onSelect }) {
         kvCacheType:        settings.kvCacheType,
         flashAttn:          settings.flashAttn,
         cacheContextShift:  settings.cacheContextShift,
-        draftModelPath:     settings.draftModelPath,
-        draftNGpuLayers:    settings.draftNGpuLayers,
+        speculativeDecoding: settings.speculativeDecoding,
+        draftNumPredTokens:  settings.draftNumPredTokens,
+        selectedGpuIndex:   settings.selectedGpuIndex,
+        tensorSplit:        settings.tensorSplit,
       });
     } catch (e) { /* handled in store */ }
   };
 
   const handleDelete = () => {
     if (showConfirmDelete) {
-      deleteModel(model.id);
+      deleteModel(model.id, model.downloaded_quant || null);
       setShowConfirmDelete(false);
     } else {
       setShowConfirmDelete(true);
@@ -77,7 +95,7 @@ export default function ModelCard({ model, isLocal = false, onSelect }) {
       onClick={() => onSelect?.(model)}
       role="button"
       tabIndex={0}
-      id={`model-card-${model.id.replace(/[^a-zA-Z0-9]/g, '-')}`}
+      id={`model-card-${model.id.replace(/[^a-zA-Z0-9]/g, '-')}-${(model.downloaded_quant || selectedQuant).replace(/[^a-zA-Z0-9]/g, '-')}`}
     >
       {/* Header */}
       <div className="model-card-header">
@@ -163,16 +181,38 @@ export default function ModelCard({ model, isLocal = false, onSelect }) {
             </button>
           </>
         ) : (
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              downloadModel(model.id, model.available_quants?.[1] || 'Q4_K_M');
-            }}
-            disabled={isDownloading}
-          >
-            {isDownloading ? t('models.downloading') : t('models.download')}
-          </button>
+          <>
+            {availableQuants.length > 1 && (
+              <select
+                className="setting-input-small model-quant-select"
+                value={progress?.quant || selectedQuant}
+                disabled={isDownloading}
+                onChange={(e) => { e.stopPropagation(); setSelectedQuant(e.target.value); }}
+                onClick={(e) => e.stopPropagation()}
+                aria-label="Quant seç"
+              >
+                {availableQuants.map((quant) => <option key={quant} value={quant}>{quant}</option>)}
+              </select>
+            )}
+            {isDownloading ? (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={(e) => { e.stopPropagation(); cancelDownload(model.id); }}
+              >
+                {t('chat.stop')}
+              </button>
+            ) : (
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                downloadModel(model.id, selectedQuant);
+              }}
+            >
+              {progress?.status === 'paused' ? 'Devam Et' : t('models.download')}
+            </button>
+            )}
+          </>
         )}
       </div>
 

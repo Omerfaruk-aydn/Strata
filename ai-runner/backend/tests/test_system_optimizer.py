@@ -117,39 +117,62 @@ class TestSystemOptimizer:
         if len(profile.gpus) > 0:
             assert sum(profile.tensor_split_recommended) > 0.0
 
-    def test_lock_cpu_affinity_and_priority(self):
+    @patch("psutil.cpu_count", side_effect=lambda logical=True: 8 if logical else 4)
+    @patch("psutil.Process")
+    def test_lock_cpu_affinity_and_priority(self, mock_process, _mock_cpu_count):
         """Process lock should raise scheduling class or lock affinity cores."""
         res = lock_cpu_affinity_and_priority()
-        assert "priority" in res
-        assert "affinity" in res
+        assert res["priority"] == "HIGH_PRIORITY_CLASS"
+        assert res["affinity"] == "locked_to_physical"
+        mock_process.return_value.cpu_affinity.assert_called_once_with([0, 2, 4, 6])
 
+    @patch("backend.core.system_optimizer.IS_WINDOWS", False)
     def test_flush_vram_cache_execution(self):
         """VRAM flushing should trigger memory cleanup gracefully."""
         res = flush_vram_cache()
-        assert "status" in res
+        assert res["status"] == "unsupported_os"
         assert "bytes_reclaimed" in res
 
+    @patch("backend.core.system_optimizer.IS_WINDOWS", False)
     def test_apply_windows_performance(self):
         """Perform Windows registry tweaks for performance."""
         res = apply_windows_performance_mode()
-        assert "status" in res
+        assert res["status"] == "unsupported_os"
         assert "message" in res
 
-    def test_create_launcher(self):
+    def test_create_launcher(self, tmp_path):
         """Zero VRAM batch script launcher creation check."""
-        res = create_zero_vram_launcher()
+        res = create_zero_vram_launcher(str(tmp_path))
         assert res["status"] == "ok"
         assert os.path.exists(res["path"])
+        second = create_zero_vram_launcher(str(tmp_path))
+        assert second["status"] == "exists"
+        assert "npm run dev" in open(res["path"], encoding="utf-8").read()
         # Cleanup created file to avoid leaving clutter
         try:
             os.remove(res["path"])
         except Exception:
             pass
 
+    @patch("backend.core.system_optimizer.IS_WINDOWS", False)
     def test_apply_nvidia_tweak(self):
         """Nvidia sysmem fallback toggle test."""
         res = apply_nvidia_sysmem_fallback_tweak()
-        assert "status" in res
+        assert res["status"] == "unsupported_os"
         assert "message" in res
 
+    @patch("backend.core.system_optimizer.IS_WINDOWS", True)
+    def test_nvidia_tweak_is_guidance_only(self):
+        res = apply_nvidia_sysmem_fallback_tweak()
+        assert res["status"] == "manual_required"
+        assert "registry" in res["message"].lower()
 
+    def test_packaged_launcher_targets_desktop_executable(self, tmp_path):
+        executable = tmp_path / "AI Runner.exe"
+        output_dir = tmp_path / "launcher"
+        result = create_zero_vram_launcher(
+            str(output_dir),
+            desktop_executable=str(executable),
+        )
+        content = open(result["path"], encoding="utf-8").read()
+        assert f'start "" "{executable}"' in content

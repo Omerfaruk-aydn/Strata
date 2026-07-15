@@ -5,8 +5,10 @@
  */
 
 import { create } from 'zustand';
+import { apiFetch, readSse } from '../api/client';
 
-const API_BASE = 'http://127.0.0.1:8420';
+let searchController = null;
+let searchRequestId = 0;
 
 const useModelStore = create((set, get) => ({
   // ── State ──
@@ -24,22 +26,31 @@ const useModelStore = create((set, get) => ({
 
   /** FR-101: Search HuggingFace for GGUF models */
   searchModels: async (query) => {
+    searchController?.abort();
+    searchController = new AbortController();
+    const requestId = ++searchRequestId;
     set({ isSearching: true, searchQuery: query, error: null });
     try {
-      const res = await fetch(`${API_BASE}/api/models/search?q=${encodeURIComponent(query)}`);
-      if (!res.ok) throw new Error('Arama başarısız');
+      const res = await apiFetch(`/api/models/search?q=${encodeURIComponent(query)}`, {
+        signal: searchController.signal,
+      });
       const data = await res.json();
-      set({ searchResults: data.models || [], isSearching: false });
+      if (requestId === searchRequestId) {
+        set({ searchResults: data.models || [], isSearching: false });
+      }
     } catch (err) {
-      set({ error: err.message, isSearching: false });
+      if (err.name !== 'AbortError' && requestId === searchRequestId) {
+        set({ error: err.message, isSearching: false });
+      }
+    } finally {
+      if (requestId === searchRequestId) searchController = null;
     }
   },
 
   /** FR-105: Load local model library */
   fetchLocalModels: async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/models/local`);
-      if (!res.ok) throw new Error('Yerel modeller yüklenemedi');
+      const res = await apiFetch('/api/models/local');
       const data = await res.json();
       set({ localModels: data.models || [] });
     } catch (err) {
@@ -50,65 +61,75 @@ const useModelStore = create((set, get) => ({
   /** FR-102: Download a model with progress tracking */
   downloadModel: async (modelId, quant = 'Q4_K_M') => {
     set((state) => ({
-      downloadProgress: {
-        ...state.downloadProgress,
-        [modelId]: { progress: 0, status: 'downloading', speed: 0, eta: 0 },
+        downloadProgress: {
+          ...state.downloadProgress,
+          [modelId]: { quant, progress: 0, status: 'downloading', speed: 0, eta: 0 },
       },
     }));
 
+    let terminalStatus = null;
     try {
-      const res = await fetch(`${API_BASE}/api/models/${encodeURIComponent(modelId)}/download`, {
+      const res = await apiFetch(`/api/models/${encodeURIComponent(modelId)}/download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quant }),
       });
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              set((state) => ({
-                downloadProgress: {
-                  ...state.downloadProgress,
-                  [modelId]: {
-                    progress: data.progress || 0,
-                    status: data.status || 'downloading',
-                    speed: data.speed_mbps || 0,
-                    eta: data.eta_seconds || 0,
-                    downloadedBytes: data.downloaded_bytes || 0,
-                    totalBytes: data.total_bytes || 0,
-                  },
-                },
-              }));
-
-              if (data.status === 'completed') {
-                // Refresh local models
-                get().fetchLocalModels();
-              }
-            } catch (e) { /* skip invalid JSON */ }
-          }
+      for await (const data of readSse(res)) {
+        if (data.status === 'error') {
+          terminalStatus = 'error';
+          throw new Error(data.error || 'Model indirilemedi.');
         }
+
+        set((state) => ({
+          downloadProgress: {
+            ...state.downloadProgress,
+            [modelId]: (() => {
+              const previous = state.downloadProgress[modelId] || {};
+              return {
+                quant: data.quant || quant,
+                progress: data.status === 'completed' ? 1 : (data.progress ?? previous.progress ?? 0),
+                status: data.status || 'downloading',
+                speed: data.speed_mbps ?? previous.speed ?? 0,
+                eta: data.eta_seconds ?? previous.eta ?? 0,
+                downloadedBytes: data.downloaded_bytes ?? previous.downloadedBytes ?? 0,
+                totalBytes: data.total_bytes ?? previous.totalBytes ?? 0,
+              };
+            })(),
+          },
+        }));
+
+        if (['completed', 'paused', 'error'].includes(data.status)) {
+          terminalStatus = data.status;
+        }
+        if (data.status === 'completed') await get().fetchLocalModels();
       }
+      if (!terminalStatus) throw new Error('İndirme akışı tamamlanmadan kapandı.');
     } catch (err) {
       set((state) => ({
         downloadProgress: {
           ...state.downloadProgress,
-          [modelId]: { progress: 0, status: 'error' },
+          [modelId]: { quant, progress: 0, status: 'error' },
         },
         error: err.message,
       }));
+    }
+  },
+
+  /** Pause an active download; its .part file is retained for resume. */
+  cancelDownload: async (modelId) => {
+    try {
+      set((state) => ({
+        downloadProgress: {
+          ...state.downloadProgress,
+          [modelId]: { ...state.downloadProgress[modelId], status: 'cancelling' },
+        },
+      }));
+      await apiFetch(`/api/models/${encodeURIComponent(modelId)}/download/cancel`, {
+        method: 'POST',
+      });
+    } catch (err) {
+      set({ error: err.message });
     }
   },
 
@@ -116,7 +137,7 @@ const useModelStore = create((set, get) => ({
   loadModel: async (modelId, options = {}) => {
     set({ loadingModelId: modelId, error: null });
     try {
-      const res = await fetch(`${API_BASE}/api/models/${encodeURIComponent(modelId)}/load`, {
+      const res = await apiFetch(`/api/models/${encodeURIComponent(modelId)}/load`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -135,15 +156,12 @@ const useModelStore = create((set, get) => ({
           // Smart Context Shifting
           cache_context_shift: options.cacheContextShift   ?? true,
           // Speculative Decoding (optional)
-          draft_model_path:    options.draftModelPath       || null,
-          draft_n_gpu_layers:  options.draftNGpuLayers      ?? -1,
+          speculative_decoding: options.speculativeDecoding ?? false,
+          draft_num_pred_tokens: options.draftNumPredTokens ?? 10,
+          selected_gpu_index:  options.selectedGpuIndex     ?? 0,
+          tensor_split:        options.tensorSplit          || null,
         }),
       });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.detail || 'Model yüklenemedi');
-      }
 
       const data = await res.json();
       set({
@@ -162,7 +180,7 @@ const useModelStore = create((set, get) => ({
   /** Unload active model */
   unloadModel: async () => {
     try {
-      await fetch(`${API_BASE}/api/models/unload`, { method: 'POST' });
+      await apiFetch('/api/models/unload', { method: 'POST' });
       set({ activeModel: null });
     } catch (err) {
       set({ error: err.message });
@@ -172,12 +190,11 @@ const useModelStore = create((set, get) => ({
   /** FR-104: Get offload plan preview */
   getOffloadPlan: async (modelId, quant = 'Q4_K_M', contextLength = 4096) => {
     try {
-      const res = await fetch(`${API_BASE}/api/models/${encodeURIComponent(modelId)}/plan`, {
+      const res = await apiFetch(`/api/models/${encodeURIComponent(modelId)}/plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quant, context_length: contextLength }),
       });
-      if (!res.ok) throw new Error('Plan hesaplanamadı');
       return await res.json();
     } catch (err) {
       set({ error: err.message });
@@ -186,12 +203,12 @@ const useModelStore = create((set, get) => ({
   },
 
   /** FR-105: Delete a local model */
-  deleteModel: async (modelId) => {
+  deleteModel: async (modelId, quant = null) => {
     try {
-      const res = await fetch(`${API_BASE}/api/models/local/${encodeURIComponent(modelId)}`, {
+      const query = quant ? `?quant=${encodeURIComponent(quant)}` : '';
+      await apiFetch(`/api/models/local/${encodeURIComponent(modelId)}${query}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Model silinemedi');
       get().fetchLocalModels();
     } catch (err) {
       set({ error: err.message });
@@ -199,7 +216,12 @@ const useModelStore = create((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
-  clearSearch: () => set({ searchResults: [], searchQuery: '' }),
+  clearSearch: () => {
+    searchController?.abort();
+    searchController = null;
+    searchRequestId += 1;
+    set({ searchResults: [], searchQuery: '', isSearching: false });
+  },
 }));
 
 export default useModelStore;

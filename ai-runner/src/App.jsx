@@ -4,12 +4,11 @@
  * Implements FR-401, FR-406 (keyboard shortcuts), FR-407 (theme).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import useSettingsStore from './store/useSettingsStore';
 import useHardwareStore from './store/useHardwareStore';
 import useSessionStore from './store/useSessionStore';
 import useModelStore from './store/useModelStore';
-import useTelemetryStore from './store/useTelemetryStore';
 import { useTranslation } from './i18n/useTranslation';
 import ModelShelf from './components/ModelShelf';
 import ChatConsole from './components/ChatConsole';
@@ -17,6 +16,7 @@ import TelemetryPanel from './components/TelemetryPanel';
 import SessionList from './components/SessionList';
 import SettingsModal from './components/SettingsModal';
 import SystemOptimizer from './components/SystemOptimizer';
+import { configureApi, waitForApi } from './api/client';
 import './App.css';
 
 export default function App() {
@@ -26,23 +26,41 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [optimizerOpen, setOptimizerOpen] = useState(false);
   const [showSessions, setShowSessions] = useState(true);
+  const [startupState, setStartupState] = useState('starting');
+  const [startupError, setStartupError] = useState('');
+  const [startupApiKey, setStartupApiKey] = useState('');
+  const initializationStarted = useRef(false);
 
   const { fetchSettings, theme } = useSettingsStore();
   const { fetchProfile } = useHardwareStore();
   const { fetchSessions, createSession } = useSessionStore();
   const { fetchLocalModels } = useModelStore();
-  const { connect } = useTelemetryStore();
   const error = useSessionStore((s) => s.error);
   const modelError = useModelStore((s) => s.error);
 
+  const initialize = useCallback(async () => {
+    setStartupState('starting');
+    setStartupError('');
+    try {
+      await waitForApi();
+      const settingsLoaded = await fetchSettings();
+      if (!settingsLoaded) {
+        throw new Error(useSettingsStore.getState().error || 'Ayarlar okunamadı.');
+      }
+      await Promise.all([fetchProfile(), fetchSessions(), fetchLocalModels()]);
+      setStartupState('ready');
+    } catch (startupFailure) {
+      setStartupError(startupFailure.message || 'Backend bağlantısı kurulamadı.');
+      setStartupState('error');
+    }
+  }, [fetchLocalModels, fetchProfile, fetchSessions, fetchSettings]);
+
   // ── Initialize on mount ──
   useEffect(() => {
-    fetchSettings();
-    fetchProfile();
-    fetchSessions();
-    fetchLocalModels();
-    connect();
-  }, []);
+    if (initializationStarted.current) return;
+    initializationStarted.current = true;
+    initialize();
+  }, [initialize]);
 
   // ── Keyboard Shortcuts (FR-406) ──
   const handleKeyDown = useCallback((e) => {
@@ -89,6 +107,45 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  if (startupState !== 'ready') {
+    const retry = () => {
+      if (startupApiKey.trim()) {
+        configureApi({ apiKey: startupApiKey.trim() });
+      }
+      useSettingsStore.getState().clearError();
+      initialize();
+    };
+
+    return (
+      <div className="app app-startup" data-theme={theme}>
+        <div className="startup-mark" aria-hidden="true">A</div>
+        <h1>AI Runner</h1>
+        {startupState === 'starting' ? (
+          <>
+            <div className="startup-spinner" aria-label="Yükleniyor" />
+            <p>Yerel yapay zekâ motoru hazırlanıyor…</p>
+            <span>İlk açılışta paket çıkarma işlemi biraz sürebilir.</span>
+          </>
+        ) : (
+          <div className="startup-recovery">
+            <p>{startupError}</p>
+            <label htmlFor="startup-api-key">API anahtarı (gerekiyorsa)</label>
+            <input
+              id="startup-api-key"
+              className="setting-input"
+              type="password"
+              value={startupApiKey}
+              onChange={(event) => setStartupApiKey(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && retry()}
+              autoComplete="current-password"
+            />
+            <button className="btn btn-primary" onClick={retry}>Yeniden Dene</button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="app" data-theme={theme}>

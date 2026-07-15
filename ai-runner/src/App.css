@@ -9,6 +9,83 @@
   background: var(--bg-base);
 }
 
+.app-startup {
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.app-startup h1 {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.app-startup p {
+  max-width: 520px;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+}
+
+.app-startup > span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.startup-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--accent-active);
+  border-radius: 15px;
+  background: var(--accent-active-dim);
+  color: var(--accent-active);
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.startup-spinner {
+  width: 22px;
+  height: 22px;
+  margin-top: var(--space-4);
+  border: 2px solid var(--border-hairline);
+  border-top-color: var(--accent-active);
+  border-radius: 50%;
+  animation: startup-spin 700ms linear infinite;
+}
+
+.startup-recovery {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: min(420px, calc(100vw - 48px));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  text-align: left;
+}
+
+.startup-recovery p {
+  margin: 0 0 var(--space-2);
+}
+
+.startup-recovery label {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+@keyframes startup-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ── Header ── */
 .app-header {
   display: flex;

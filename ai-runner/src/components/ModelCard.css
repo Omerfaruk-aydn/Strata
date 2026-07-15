@@ -118,3 +118,8 @@
 .model-card-actions .btn {
   flex: 1;
 }
+
+.model-quant-select {
+  min-width: 5.5rem;
+  flex: 0 0 auto;
+}

@@ -49,7 +49,7 @@ async def create_session(
     params: Optional[Dict] = None,
 ) -> Dict[str, Any]:
     """Create a new chat session."""
-    session_id = f"sess_{uuid.uuid4().hex[:8]}"
+    session_id = f"sess_{uuid.uuid4().hex}"
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -110,7 +110,7 @@ async def get_session(session_id: str) -> Optional[Dict[str, Any]]:
             return None
 
         msg_cursor = await db.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC",
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC, id ASC",
             (session_id,)
         )
         messages = await msg_cursor.fetchall()
@@ -168,12 +168,12 @@ async def update_session(
     values.append(session_id)
 
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+        cursor = await db.execute(
             f"UPDATE chat_sessions SET {', '.join(updates)} WHERE id = ?",
             values
         )
         await db.commit()
-    return True
+        return cursor.rowcount > 0
 
 
 async def delete_session(session_id: str) -> bool:
@@ -197,6 +197,11 @@ async def add_message(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     async with aiosqlite.connect(DB_PATH) as db:
+        exists = await db.execute(
+            "SELECT 1 FROM chat_sessions WHERE id = ?", (session_id,)
+        )
+        if not await exists.fetchone():
+            raise ValueError("Oturum bulunamadı")
         cursor = await db.execute(
             """INSERT INTO messages (session_id, role, content, timestamp, tokens_generated)
                VALUES (?, ?, ?, ?, ?)""",
@@ -226,7 +231,7 @@ async def get_messages(session_id: str) -> List[Dict[str, Any]]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC",
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY timestamp ASC, id ASC",
             (session_id,)
         )
         rows = await cursor.fetchall()
@@ -303,7 +308,10 @@ async def update_settings(settings: Dict[str, Any]) -> None:
 
     async with aiosqlite.connect(DB_PATH) as db:
         for key, value in settings.items():
-            value_str = json.dumps(value) if not isinstance(value, str) else value
+            # Encode every value consistently. Legacy raw strings remain
+            # readable because get_settings/get_setting fall back to the raw
+            # value when JSON decoding fails.
+            value_str = json.dumps(value, ensure_ascii=False)
             await db.execute(
                 """INSERT INTO settings (key, value, updated_at)
                    VALUES (?, ?, ?)
@@ -343,6 +351,7 @@ DEFAULT_SETTINGS = {
     "api_host": "127.0.0.1",
     "api_port": 8420,
     "api_key": None,
+    "allow_network_access": False,
     "advanced_mode": False,
     # Performance & Optimization Defaults
     "kv_cache_type": "q4_0",
@@ -351,10 +360,14 @@ DEFAULT_SETTINGS = {
     "cache_context_shift": True,
     "draft_model_path": "",
     "draft_n_gpu_layers": -1,
+    "speculative_decoding": False,
+    "draft_num_pred_tokens": 10,
     # Prompt Pruning (FR-608)
     "max_context_length": 4096,
     "max_history_messages": 20,
     "auto_context_prune": True,
+    "selected_gpu_index": 0,
+    "tensor_split": None,
 }
 
 

@@ -205,7 +205,7 @@ class TestContextShift:
         """When context shift is disabled, no trimming should occur."""
         from backend.core.inference_engine import InferenceEngine, EngineConfig
         engine = InferenceEngine()
-        engine._config = EngineConfig(cache_context_shift=False)
+        engine._config = EngineConfig(auto_context_prune=False)
         # Simulate a very long conversation (>3800 tokens estimated)
         long_content = "A" * 20000  # ~5000 tokens
         messages = [
@@ -274,4 +274,3 @@ class TestOptimizationSummary:
         engine._config = EngineConfig()
         engine._draft_model = None
         assert engine.get_optimization_summary()["kv_cache_type"] == "q4_0"
-

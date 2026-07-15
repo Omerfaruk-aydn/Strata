@@ -1,0 +1,8 @@
+# CI does not load a real model, so it intentionally avoids selecting a
+# platform-specific llama-cpp-python compute wheel.
+-r requirements-base.txt
+
+pytest>=8.0.0,<10
+pytest-asyncio>=0.23.0,<2
+pytest-cov>=5.0.0,<8
+pip-audit>=2.7.0,<3

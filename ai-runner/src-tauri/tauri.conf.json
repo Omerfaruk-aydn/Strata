@@ -1,13 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2.json",
-  "productName": "ai-runner",
+  "productName": "AI Runner",
   "version": "1.0.0",
-  "identifier": "com.airunner.app",
+  "identifier": "com.airunner.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/before-tauri-build.ps1"
   },
   "app": {
     "windows": [
@@ -24,12 +24,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": [
+      "binaries/ai_runner_backend"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,19 +40,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "shell": {
-      "open": true,
-      "sidecar": true,
-      "scope": [
-        {
-          "name": "backend",
-          "cmd": "ai_runner_backend",
-          "args": true,
-          "sidecar": true
-        }
-      ]
-    }
   }
 }

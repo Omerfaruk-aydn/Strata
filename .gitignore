@@ -20,8 +20,19 @@ env/
 
 # Models
 *.gguf
-models/
-cache/
+/ai-runner/models/
+/ai-runner/cache/
+
+# Local tooling and generated reports
+.tools/
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+ai-runner/build-sidecar/
+ai-runner/dist-sidecar/
+ai-runner/src-tauri/binaries/*
+!ai-runner/src-tauri/binaries/.gitkeep
 
 # IDE
 .vscode/
@@ -30,4 +41,5 @@ cache/
 .DS_Store
 
 # Tauri
-src-tauri/target/
+/ai-runner/src-tauri/target/
+/ai-runner/src-tauri/gen/schemas/

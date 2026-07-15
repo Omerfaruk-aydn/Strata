@@ -5,8 +5,8 @@
  */
 
 import { create } from 'zustand';
-
-const API_BASE = 'http://127.0.0.1:8420';
+import { apiFetch } from '../api/client';
+import useSettingsStore from './useSettingsStore';
 
 const useHardwareStore = create((set, get) => ({
   // ── State ──
@@ -21,8 +21,7 @@ const useHardwareStore = create((set, get) => ({
   fetchProfile: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await fetch(`${API_BASE}/api/hardware/profile`);
-      if (!res.ok) throw new Error('Donanım profili alınamadı');
+      const res = await apiFetch('/api/hardware/profile');
       const data = await res.json();
 
       set({
@@ -39,8 +38,7 @@ const useHardwareStore = create((set, get) => ({
   refreshProfile: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/hardware/refresh`, { method: 'POST' });
-      if (!res.ok) throw new Error('Profil yenilenemedi');
+      const res = await apiFetch('/api/hardware/refresh', { method: 'POST' });
       const data = await res.json();
       set({
         profile: data,
@@ -53,9 +51,9 @@ const useHardwareStore = create((set, get) => ({
   },
 
   /** FR-202: Select GPU (multi-GPU) */
-  selectGpu: (index) => {
+  selectGpu: async (index) => {
+    if (!get().profile?.gpus?.[index]) return;
     set((state) => {
-      if (!state.profile?.gpus?.[index]) return {};
       return {
         profile: {
           ...state.profile,
@@ -63,6 +61,10 @@ const useHardwareStore = create((set, get) => ({
           selected_gpu_index: index,
         },
       };
+    });
+    await useSettingsStore.getState().saveSettings({
+      selectedGpuIndex: index,
+      tensorSplit: null,
     });
   },
 

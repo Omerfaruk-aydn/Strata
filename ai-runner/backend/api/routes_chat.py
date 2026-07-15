@@ -7,58 +7,78 @@ Implements FR-501, FR-502, FR-701–FR-703.
 import json
 import time
 import asyncio
-from fastapi import APIRouter, HTTPException, Request
+import uuid
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Optional, List, Dict, Any, Literal, Union
 import logging
 
 from ..core.inference_engine import engine, InferenceParams
 from ..db import session_store
+from .auth import require_api_access
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["chat"])
+router = APIRouter(tags=["chat"], dependencies=[Depends(require_api_access)])
 
 
 # ── OpenAI-Compatible Models ──
 
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: Literal["system", "user", "assistant"]
+    content: str = Field(max_length=1_000_000)
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str = ""
-    messages: List[ChatMessage]
-    temperature: float = 0.7
-    top_p: float = 0.9
-    max_tokens: int = 2048
+    model_config = ConfigDict(extra="ignore")
+
+    model: str = Field(default="", max_length=500)
+    messages: List[ChatMessage] = Field(min_length=1, max_length=100_000)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, gt=0.0, le=1.0)
+    top_k: int = Field(default=40, ge=1, le=10_000)
+    repeat_penalty: float = Field(default=1.1, ge=0.0, le=10.0)
+    max_tokens: int = Field(default=2048, ge=1, le=1_048_576)
     stream: bool = False
-    stop: Optional[List[str]] = None
+    stop: Optional[Union[str, List[str]]] = None
+    stream_options: Optional[Dict[str, Any]] = None
+
+    @field_validator("stop")
+    @classmethod
+    def validate_stop(cls, value):
+        if value is None:
+            return value
+        stops = [value] if isinstance(value, str) else value
+        if len(stops) > 16 or any(not stop or len(stop) > 1_000 for stop in stops):
+            raise ValueError("stop en fazla 16 adet, boş olmayan dize içerebilir")
+        return value
 
 
 class SessionCreateRequest(BaseModel):
-    title: str = "Yeni Sohbet"
-    model_id: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(default="Yeni Sohbet", min_length=1, max_length=500)
+    model_id: Optional[str] = Field(default=None, max_length=500)
     params: Optional[Dict[str, Any]] = None
 
 
 class SessionUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    model_id: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+    title: Optional[str] = Field(default=None, min_length=1, max_length=500)
+    model_id: Optional[str] = Field(default=None, max_length=500)
     pinned: Optional[bool] = None
     params: Optional[Dict[str, Any]] = None
 
 
 class MessageRequest(BaseModel):
-    content: str
-    session_id: str
-    system_prompt: str = ""
-    temperature: float = 0.7
-    top_p: float = 0.9
-    top_k: int = 40
-    repeat_penalty: float = 1.1
-    max_tokens: int = 2048
+    model_config = ConfigDict(extra="forbid")
+    content: str = Field(min_length=1, max_length=1_000_000)
+    session_id: str = Field(min_length=1, max_length=100)
+    system_prompt: str = Field(default="", max_length=100_000)
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, gt=0.0, le=1.0)
+    top_k: int = Field(default=40, ge=1, le=10_000)
+    repeat_penalty: float = Field(default=1.1, ge=0.0, le=10.0)
+    max_tokens: int = Field(default=2048, ge=1, le=1_048_576)
 
 
 # ── OpenAI-Compatible Endpoints ──
@@ -76,17 +96,25 @@ async def chat_completions(request: ChatCompletionRequest):
         )
 
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    stops = [request.stop] if isinstance(request.stop, str) else (request.stop or [])
     params = InferenceParams(
         temperature=request.temperature,
         top_p=request.top_p,
+        top_k=request.top_k,
+        repeat_penalty=request.repeat_penalty,
         max_tokens=request.max_tokens,
-        stop=request.stop or [],
+        stop=stops,
     )
 
     if request.stream:
         return StreamingResponse(
-            _stream_chat_completion(messages, params),
+            _stream_chat_completion(
+                messages,
+                params,
+                include_usage=bool((request.stream_options or {}).get("include_usage")),
+            ),
             media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
     else:
         return await _non_streaming_completion(messages, params, request.model)
@@ -95,10 +123,12 @@ async def chat_completions(request: ChatCompletionRequest):
 async def _stream_chat_completion(
     messages: List[Dict[str, str]],
     params: InferenceParams,
+    include_usage: bool = False,
 ):
     """Stream chat completion in OpenAI SSE format."""
-    completion_id = f"chatcmpl-{int(time.time())}"
+    completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     model_id = engine.model_info.model_id if engine.model_info else "unknown"
+    prompt_tokens = engine.count_prompt_tokens(messages)
 
     async for chunk in engine.generate_streaming(messages, params):
         if chunk["type"] == "token":
@@ -129,10 +159,31 @@ async def _stream_chat_completion(
                 }],
             }
             yield f"data: {json.dumps(data)}\n\n"
+            if include_usage:
+                usage_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model_id,
+                    "choices": [],
+                    "usage": {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": result.get("tokens_generated", 0),
+                        "total_tokens": prompt_tokens + result.get("tokens_generated", 0),
+                    },
+                }
+                yield f"data: {json.dumps(usage_chunk)}\n\n"
             yield "data: [DONE]\n\n"
 
         elif chunk["type"] == "error":
-            yield f"data: {json.dumps({'error': chunk['error']})}\n\n"
+            error = {
+                "error": {
+                    "message": chunk["error"],
+                    "type": "inference_error",
+                    "code": "generation_failed",
+                }
+            }
+            yield f"data: {json.dumps(error)}\n\n"
             yield "data: [DONE]\n\n"
 
 
@@ -143,14 +194,15 @@ async def _non_streaming_completion(
 ):
     """Non-streaming chat completion in OpenAI format."""
     try:
-        loop = asyncio.get_event_loop()
+        prompt_tokens = engine.count_prompt_tokens(messages)
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             None,
             lambda: engine.generate_sync(messages, params)
         )
 
         return {
-            "id": f"chatcmpl-{int(time.time())}",
+            "id": f"chatcmpl-{uuid.uuid4().hex}",
             "object": "chat.completion",
             "created": int(time.time()),
             "model": engine.model_info.model_id if engine.model_info else model,
@@ -163,9 +215,9 @@ async def _non_streaming_completion(
                 "finish_reason": result.finish_reason,
             }],
             "usage": {
-                "prompt_tokens": 0,
+                "prompt_tokens": prompt_tokens,
                 "completion_tokens": result.tokens_generated,
-                "total_tokens": result.tokens_generated,
+                "total_tokens": prompt_tokens + result.tokens_generated,
             },
         }
     except Exception as e:
@@ -225,6 +277,8 @@ async def get_session(session_id: str):
 @router.put("/api/sessions/{session_id}")
 async def update_session(session_id: str, request: SessionUpdateRequest):
     """Update a session (rename, pin, etc.)."""
+    if not request.model_fields_set:
+        raise HTTPException(status_code=400, detail="Güncellenecek en az bir alan gerekli.")
     success = await session_store.update_session(
         session_id=session_id,
         title=request.title,
@@ -249,6 +303,8 @@ async def delete_session(session_id: str):
 @router.get("/api/sessions/{session_id}/export/{format}")
 async def export_session(session_id: str, format: str):
     """FR-405: Export a chat session."""
+    if not await session_store.get_session(session_id):
+        raise HTTPException(status_code=404, detail="Oturum bulunamadı")
     if format == "markdown" or format == "md":
         content = await session_store.export_session_markdown(session_id)
         return StreamingResponse(
@@ -280,6 +336,10 @@ async def send_chat_message(request: MessageRequest):
             status_code=503,
             detail="Model yüklü değil"
         )
+    if engine.is_generating:
+        raise HTTPException(status_code=409, detail="Başka bir üretim zaten devam ediyor.")
+    if not await session_store.get_session(request.session_id):
+        raise HTTPException(status_code=404, detail="Oturum bulunamadı")
 
     # Save user message
     await session_store.add_message(
@@ -293,7 +353,8 @@ async def send_chat_message(request: MessageRequest):
     
     # Respect prompt pruning: Limit history messages if configured
     max_history = await session_store.get_setting("max_history_messages", 20)
-    if max_history and max_history > 0:
+    auto_prune = await session_store.get_setting("auto_context_prune", True)
+    if auto_prune and max_history and max_history > 0:
         # Keep the latest N messages
         messages = messages[-max_history:]
 
@@ -311,34 +372,55 @@ async def send_chat_message(request: MessageRequest):
     async def event_stream():
         full_response = ""
         tokens_generated = 0
+        assistant_saved = False
 
-        async for chunk in engine.generate_streaming(msg_list, params):
-            if chunk["type"] == "token":
-                full_response += chunk["content"]
-                tokens_generated = chunk.get("tokens_generated", 0)
-                yield f"data: {json.dumps(chunk)}\n\n"
+        try:
+            async for chunk in engine.generate_streaming(msg_list, params):
+                if chunk["type"] == "token":
+                    full_response += chunk["content"]
+                    tokens_generated = chunk.get("tokens_generated", 0)
+                    yield f"data: {json.dumps(chunk)}\n\n"
 
-            elif chunk["type"] == "done":
-                # Save assistant message
-                await session_store.add_message(
-                    session_id=request.session_id,
-                    role="assistant",
-                    content=full_response,
-                    tokens_generated=tokens_generated,
-                )
-                yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "done":
+                    result = chunk.get("result") or {}
+                    tokens_generated = int(result.get("tokens_generated") or tokens_generated)
+                    if full_response:
+                        await session_store.add_message(
+                            session_id=request.session_id,
+                            role="assistant",
+                            content=full_response,
+                            tokens_generated=tokens_generated,
+                        )
+                        assistant_saved = True
+                    yield f"data: {json.dumps(chunk)}\n\n"
 
-            elif chunk["type"] == "error":
-                yield f"data: {json.dumps(chunk)}\n\n"
+                elif chunk["type"] == "error":
+                    yield f"data: {json.dumps(chunk)}\n\n"
+        finally:
+            # Preserve partial output when a browser/network disconnects after
+            # generation has already produced useful text.
+            if full_response and not assistant_saved:
+                try:
+                    await session_store.add_message(
+                        session_id=request.session_id,
+                        role="assistant",
+                        content=full_response,
+                        tokens_generated=tokens_generated,
+                    )
+                except Exception:
+                    logger.exception("Partial assistant response could not be saved")
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
 @router.post("/api/chat/stop")
 async def stop_generation():
     """FR-303: Stop the current generation."""
+    if not engine.is_generating:
+        return {"status": "idle"}
     engine.stop_generation()
     return {"status": "stopping"}

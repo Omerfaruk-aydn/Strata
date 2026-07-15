@@ -11,6 +11,8 @@ from typing import Set, Optional, Dict, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 import logging
 
+from .auth import websocket_access_allowed
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["telemetry"])
 
@@ -25,7 +27,11 @@ class TelemetryManager:
         self._interval = 1.0  # seconds between telemetry updates
 
     async def connect(self, websocket: WebSocket):
-        await websocket.accept()
+        requested_protocols = websocket.headers.get("sec-websocket-protocol", "")
+        subprotocol = "ai-runner" if "ai-runner" in {
+            part.strip() for part in requested_protocols.split(",")
+        } else None
+        await websocket.accept(subprotocol=subprotocol)
         self._connections.add(websocket)
         logger.info(f"WebSocket connected. Active: {len(self._connections)}")
 
@@ -93,7 +99,8 @@ class TelemetryManager:
 
         gpu_data = {}
         if gpus:
-            gpu = gpus[0]
+            selected_gpu = engine.model_info.main_gpu if engine.model_info else 0
+            gpu = gpus[selected_gpu] if 0 <= selected_gpu < len(gpus) else gpus[0]
             gpu_data = {
                 "vram_used_mb": gpu.vram_used_mb,
                 "vram_total_mb": gpu.vram_total_mb,
@@ -134,6 +141,10 @@ telemetry_manager = TelemetryManager()
 @router.websocket("/ws/inference")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time telemetry and token streaming."""
+    allowed, close_code = await websocket_access_allowed(websocket)
+    if not allowed:
+        await websocket.close(code=close_code)
+        return
     await telemetry_manager.connect(websocket)
 
     try:

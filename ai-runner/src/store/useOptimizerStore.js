@@ -4,8 +4,7 @@
  */
 
 import { create } from 'zustand';
-
-const API_BASE = 'http://127.0.0.1:8420';
+import { apiFetch } from '../api/client';
 
 const useOptimizerStore = create((set, get) => ({
   // ── State ──
@@ -28,8 +27,7 @@ const useOptimizerStore = create((set, get) => ({
   fetchStatus: async () => {
     set({ isLoading: true, error: null });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/status`);
-      if (!res.ok) throw new Error('Sistem durumu alınamadı');
+      const res = await apiFetch('/api/optimizer/status');
       const data = await res.json();
       set({ status: data, isLoading: false, lastFetched: new Date() });
     } catch (err) {
@@ -41,8 +39,7 @@ const useOptimizerStore = create((set, get) => ({
   fetchPagefile: async (modelSizeMb = 0) => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/pagefile?model_size_mb=${modelSizeMb}`);
-      if (!res.ok) throw new Error('Pagefile bilgisi alınamadı');
+      const res = await apiFetch(`/api/optimizer/pagefile?model_size_mb=${modelSizeMb}`);
       const data = await res.json();
       set({ pagefile: data, isLoading: false });
     } catch (err) {
@@ -55,8 +52,8 @@ const useOptimizerStore = create((set, get) => ({
     set({ isLoading: true });
     try {
       const [svcRes, procRes] = await Promise.all([
-        fetch(`${API_BASE}/api/optimizer/services`),
-        fetch(`${API_BASE}/api/optimizer/processes?limit=10`),
+        apiFetch('/api/optimizer/services'),
+        apiFetch('/api/optimizer/processes?limit=10'),
       ]);
       const svcData = svcRes.ok ? await svcRes.json() : { services: [] };
       const procData = procRes.ok ? await procRes.json() : { processes: [] };
@@ -74,8 +71,7 @@ const useOptimizerStore = create((set, get) => ({
   fetchRamdisk: async (modelSizeMb = 0) => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/ramdisk?model_size_mb=${modelSizeMb}`);
-      if (!res.ok) throw new Error('RAM Disk bilgisi alınamadı');
+      const res = await apiFetch(`/api/optimizer/ramdisk?model_size_mb=${modelSizeMb}`);
       const data = await res.json();
       set({ ramdisk: data, isLoading: false });
     } catch (err) {
@@ -87,8 +83,7 @@ const useOptimizerStore = create((set, get) => ({
   fetchGpuProfile: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/gpu-profile`);
-      if (!res.ok) throw new Error('GPU profili alınamadı');
+      const res = await apiFetch('/api/optimizer/gpu-profile');
       const data = await res.json();
       set({ gpuProfile: data, isLoading: false });
     } catch (err) {
@@ -100,8 +95,7 @@ const useOptimizerStore = create((set, get) => ({
   triggerVramFlush: async () => {
     set({ isLoading: true, vramFlushResult: null });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/vram-flush`, { method: 'POST' });
-      if (!res.ok) throw new Error('VRAM temizleme başarısız');
+      const res = await apiFetch('/api/optimizer/vram-flush', { method: 'POST' });
       const data = await res.json();
       set({ vramFlushResult: data, isLoading: false });
       return data;
@@ -115,8 +109,7 @@ const useOptimizerStore = create((set, get) => ({
   lockPriority: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/affinity`, { method: 'POST' });
-      if (!res.ok) throw new Error('Öncelik sabitleme başarısız');
+      await apiFetch('/api/optimizer/affinity', { method: 'POST' });
       set({ isPriorityLocked: true, isLoading: false });
     } catch (err) {
       set({ error: err.message, isLoading: false });
@@ -127,8 +120,7 @@ const useOptimizerStore = create((set, get) => ({
   applyWindowsPerformance: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/apply-windows-performance`, { method: 'POST' });
-      if (!res.ok) throw new Error('Performans modu uygulanamadı');
+      const res = await apiFetch('/api/optimizer/apply-windows-performance', { method: 'POST' });
       const data = await res.json();
       set({ isLoading: false });
       return data;
@@ -142,8 +134,7 @@ const useOptimizerStore = create((set, get) => ({
   createLauncher: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/create-launcher`, { method: 'POST' });
-      if (!res.ok) throw new Error('Başlatıcı oluşturulamadı');
+      const res = await apiFetch('/api/optimizer/create-launcher', { method: 'POST' });
       const data = await res.json();
       set({ isLoading: false });
       return data;
@@ -157,8 +148,7 @@ const useOptimizerStore = create((set, get) => ({
   applyNvidiaTweak: async () => {
     set({ isLoading: true });
     try {
-      const res = await fetch(`${API_BASE}/api/optimizer/apply-nvidia-tweak`, { method: 'POST' });
-      if (!res.ok) throw new Error('NVIDIA ayarı uygulanamadı');
+      const res = await apiFetch('/api/optimizer/apply-nvidia-tweak', { method: 'POST' });
       const data = await res.json();
       set({ isLoading: false });
       return data;

@@ -10,7 +10,7 @@ import './HardwareCard.css';
 
 export default function HardwareCard() {
   const t = useTranslation();
-  const { profile, isLoading, refreshProfile, vramWarning, clearWarning } = useHardwareStore();
+  const { profile, isLoading, refreshProfile, selectGpu, vramWarning, clearWarning } = useHardwareStore();
 
   if (!profile) {
     return (
@@ -38,6 +38,26 @@ export default function HardwareCard() {
         <div className="hw-warning">
           <span>⚠️ {vramWarning}</span>
           <button className="btn btn-ghost btn-sm" onClick={clearWarning}>✕</button>
+        </div>
+      )}
+
+      {profile.gpus?.length > 1 && (
+        <div className="setting-row" style={{ marginBottom: 'var(--space-3)' }}>
+          <div className="setting-info">
+            <label>Aktif GPU</label>
+            <span className="text-small">Tek GPU modunda kullanılacak ana aygıt.</span>
+          </div>
+          <select
+            className="setting-input"
+            value={profile.selected_gpu_index ?? 0}
+            onChange={(event) => selectGpu(Number(event.target.value))}
+          >
+            {profile.gpus.map((item, index) => (
+              <option key={`${item.name}-${index}`} value={index}>
+                GPU {index}: {item.name}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

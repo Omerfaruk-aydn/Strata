@@ -37,20 +37,23 @@ export default function SettingsModal({ isOpen, onClose }) {
         flashAttn: settings.flashAttn,
         useMlock: settings.useMlock,
         cacheContextShift: settings.cacheContextShift,
-        draftModelPath: settings.draftModelPath,
-        draftNGpuLayers: settings.draftNGpuLayers,
+        speculativeDecoding: settings.speculativeDecoding,
+        draftNumPredTokens: settings.draftNumPredTokens,
         // Prompt Pruning
         maxContextLength: settings.maxContextLength,
         maxHistoryMessages: settings.maxHistoryMessages,
         autoContextPrune: settings.autoContextPrune,
+        allowNetworkAccess: settings.allowNetworkAccess,
       });
     }
   }, [isOpen, settings]);
 
-  const handleSave = () => {
-    settings.saveSettings(localSettings);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    const success = await settings.saveSettings(localSettings);
+    if (success) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   };
 
   const update = (key, value) => {
@@ -258,7 +261,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <div className="setting-info">
                   <label>⚡ Flash Attention</label>
                   <span className="text-small">
-                    Uzun bağlamlarda %20–40 hız artışı. CUDA/Metal gerektirir.
+                    Desteklenen CUDA/Metal arka uçlarında uzun bağlamları hızlandırabilir.
                   </span>
                 </div>
                 <label className="toggle-switch">
@@ -289,12 +292,12 @@ export default function SettingsModal({ isOpen, onClose }) {
                 </label>
               </div>
 
-              {/* Context Shifting */}
+              {/* Context Pruning */}
               <div className="setting-row">
                 <div className="setting-info">
-                  <label>🔄 Akıllı Bağlam Kaydırma</label>
+                  <label>🔄 Otomatik Bağlam Kırpma</label>
                   <span className="text-small">
-                    Bağlam dolduğunda eski mesajları kırparak tam yeniden hesaplamayı önler.
+                    Bağlam bütçesi dolduğunda eski konuşma turlarını güvenli şekilde çıkarır.
                   </span>
                 </div>
                 <label className="toggle-switch">
@@ -367,35 +370,39 @@ export default function SettingsModal({ isOpen, onClose }) {
               </div>
 
               <div className="setting-divider" />
-              <p className="settings-section-title">🚀 Spekülatif Çözme (Speculative Decoding)</p>
+              <p className="settings-section-title">🚀 Spekülatif Çözme</p>
               <p className="text-small" style={{ marginBottom: '0.75rem', opacity: 0.7 }}>
-                Büyük modelin yanına küçük bir taslak model ekleyerek 2–3x hız artışı sağlar.
-                Taslak model (örn. 1B–3B) hızlıca token tahmin eder, büyük model onaylar.
+                Prompt içindeki tekrarları kullanarak sonraki tokenları önceden tahmin eder.
+                Ek model veya VRAM gerektirmez; özellikle kod ve tekrarlı metinlerde faydalıdır.
               </p>
 
-              {/* Draft Model Path */}
-              <div className="setting-row setting-row-vertical">
-                <label>🤏 Taslak Model Yolu (.gguf)</label>
-                <input
-                  className="setting-input"
-                  value={localSettings.draftModelPath || ''}
-                  onChange={(e) => update('draftModelPath', e.target.value)}
-                  placeholder="C:\models\llama-3-1b.Q4_K_M.gguf (opsiyonel)"
-                />
-              </div>
-
-              {/* Draft GPU Layers */}
               <div className="setting-row">
                 <div className="setting-info">
-                  <label>GPU Katmanları (Taslak)</label>
-                  <span className="text-small">-1 = tümü GPU'ya</span>
+                  <label>Prompt Lookup Decoding</label>
+                  <span className="text-small">llama-cpp-python tarafından yerel olarak desteklenir.</span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.speculativeDecoding ?? false}
+                    onChange={(e) => update('speculativeDecoding', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Ön Tahmin Token Sayısı</label>
+                  <span className="text-small">Düşük değerler daha güvenlidir; önerilen: 10.</span>
                 </div>
                 <input
                   type="number"
                   className="setting-input-small"
-                  value={localSettings.draftNGpuLayers ?? -1}
-                  onChange={(e) => update('draftNGpuLayers', parseInt(e.target.value))}
-                  min={-1}
+                  value={localSettings.draftNumPredTokens ?? 10}
+                  onChange={(e) => update('draftNumPredTokens', parseInt(e.target.value) || 10)}
+                  min={1}
+                  max={64}
                 />
               </div>
 
@@ -450,13 +457,12 @@ export default function SettingsModal({ isOpen, onClose }) {
                   max="100"
                 />
               </div>
-
               {/* Auto Context Pruning Toggle */}
               <div className="setting-row">
                 <div className="setting-info">
                   <label>Otomatik Kırpma (Auto-Pruning)</label>
                   <span className="text-small">
-                    Bağlam penceresi %80 doluluğa ulaştığında eski mesajları otomatik olarak temizle.
+                    Geçmiş, seçilen bağlam ve yanıt bütçesine sığmadığında eski mesajları otomatik kırp.
                   </span>
                 </div>
                 <label className="toggle-switch">
@@ -498,14 +504,35 @@ export default function SettingsModal({ isOpen, onClose }) {
               <div className="setting-row">
                 <div className="setting-info">
                   <label>{t('settings.api_key')}</label>
+                  {settings.apiKeySource === 'environment' && (
+                    <span className="text-small">AI_RUNNER_API_KEY ortam değişkeni tarafından yönetiliyor.</span>
+                  )}
                 </div>
                 <input
                   className="setting-input"
                   type="password"
                   value={localSettings.apiKey || ''}
                   onChange={(e) => update('apiKey', e.target.value || null)}
-                  placeholder="Opsiyonel"
+                  placeholder={settings.apiKeySource === 'environment' ? 'Ortam değişkeninden alındı' : 'Opsiyonel'}
+                  disabled={settings.apiKeySource === 'environment'}
                 />
+              </div>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Yerel Ağ Erişimine İzin Ver</label>
+                  <span className="text-small">
+                    Yalnızca API'yi başka cihazlara açmanız gerekiyorsa etkinleştirin. API anahtarı zorunludur;
+                    değişiklik yeniden başlatmada uygulanır.
+                  </span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.allowNetworkAccess ?? false}
+                    onChange={(e) => update('allowNetworkAccess', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
               </div>
             </div>
           )}
@@ -513,11 +540,20 @@ export default function SettingsModal({ isOpen, onClose }) {
 
         {/* Footer */}
         <div className="settings-footer">
+          {settings.error ? (
+            <span className="text-small" style={{ color: 'var(--color-red)', marginRight: 'auto' }}>
+              {settings.error}
+            </span>
+          ) : settings.restartRequired ? (
+            <span className="text-small" style={{ color: 'var(--accent-primary)', marginRight: 'auto' }}>
+              API adresi bir sonraki uygulama açılışında etkinleşecek.
+            </span>
+          ) : null}
           <button className="btn btn-ghost" onClick={onClose}>
             {t('settings.cancel')}
           </button>
-          <button className="btn btn-primary" onClick={handleSave}>
-            {saved ? '✓ ' + t('settings.saved') : t('settings.save')}
+          <button className="btn btn-primary" onClick={handleSave} disabled={settings.isSaving}>
+            {settings.isSaving ? 'Kaydediliyor…' : (saved ? '✓ ' + t('settings.saved') : t('settings.save'))}
           </button>
         </div>
       </div>

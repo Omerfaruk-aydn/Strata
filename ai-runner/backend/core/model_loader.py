@@ -218,8 +218,8 @@ def compute_file_checksum(
     if not os.path.exists(filepath):
         return None
 
-    hasher = hashlib.new(algorithm)
     try:
+        hasher = hashlib.new(algorithm)
         with open(filepath, 'rb') as f:
             while True:
                 chunk = f.read(chunk_size)

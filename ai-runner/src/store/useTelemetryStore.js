@@ -5,8 +5,7 @@
  */
 
 import { create } from 'zustand';
-
-const WS_URL = 'ws://127.0.0.1:8420/ws/inference';
+import { getWebSocketConnection } from '../api/client';
 
 const useTelemetryStore = create((set, get) => ({
   // ── State ──
@@ -36,16 +35,20 @@ const useTelemetryStore = create((set, get) => ({
 
   _ws: null,
   _reconnectTimer: null,
+  _shouldReconnect: true,
 
   // ── Actions ──
 
   /** Connect to the WebSocket telemetry endpoint */
   connect: () => {
     const { _ws } = get();
-    if (_ws && _ws.readyState === WebSocket.OPEN) return;
+    if (_ws && (_ws.readyState === WebSocket.OPEN || _ws.readyState === WebSocket.CONNECTING)) return;
+
+    set({ _shouldReconnect: true });
 
     try {
-      const ws = new WebSocket(WS_URL);
+      const { url, protocols } = getWebSocketConnection();
+      const ws = protocols.length ? new WebSocket(url, protocols) : new WebSocket(url);
 
       ws.onopen = () => {
         set({ connected: true });
@@ -105,7 +108,8 @@ const useTelemetryStore = create((set, get) => ({
       };
 
       ws.onclose = () => {
-        set({ connected: false });
+        set({ connected: false, _ws: null });
+        if (!get()._shouldReconnect) return;
         console.log('[Telemetry] WebSocket disconnected, reconnecting in 3s...');
 
         // Auto-reconnect
@@ -134,8 +138,21 @@ const useTelemetryStore = create((set, get) => ({
   disconnect: () => {
     const { _ws, _reconnectTimer } = get();
     if (_reconnectTimer) clearTimeout(_reconnectTimer);
+    if (_ws) _ws.onclose = null;
     if (_ws) _ws.close();
-    set({ _ws: null, connected: false, _reconnectTimer: null });
+    set({
+      _ws: null,
+      connected: false,
+      _reconnectTimer: null,
+      _shouldReconnect: false,
+    });
+  },
+
+  /** Reconnect after host, port, or API-key changes. */
+  reconnect: () => {
+    get().disconnect();
+    set({ _shouldReconnect: true });
+    get().connect();
   },
 
   /** Send a command through the WebSocket */
@@ -158,5 +175,11 @@ const useTelemetryStore = create((set, get) => ({
     set({ tokensPerSec, ttftMs });
   },
 }));
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('ai-runner:api-config-changed', () => {
+    useTelemetryStore.getState().reconnect();
+  });
+}
 
 export default useTelemetryStore;

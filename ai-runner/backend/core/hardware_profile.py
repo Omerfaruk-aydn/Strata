@@ -6,8 +6,9 @@ Implements FR-201, FR-202, FR-203, FR-204.
 
 import platform
 import os
+import warnings
 from typing import Optional, List
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 import psutil
 
 
@@ -60,7 +61,7 @@ class DiskInfo(BaseModel):
 
 class HardwareProfile(BaseModel):
     gpu: GPUInfo
-    gpus: List[GPUInfo] = []
+    gpus: List[GPUInfo] = Field(default_factory=list)
     ram: RAMInfo
     disk: DiskInfo
     cpu: CPUInfo
@@ -73,9 +74,21 @@ class HardwareProfile(BaseModel):
 def detect_gpus() -> List[GPUInfo]:
     """Detect NVIDIA GPUs using pynvml. Returns empty list if no GPU found."""
     gpus = []
+    pynvml = None
+    initialized = False
     try:
-        import pynvml
+        # Some environments contain the deprecated redirector package beside
+        # NVIDIA's supported nvidia-ml-py distribution. The public module name
+        # remains ``pynvml``, so suppress only that redirector warning.
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="The pynvml package is deprecated.*",
+                category=FutureWarning,
+            )
+            import pynvml
         pynvml.nvmlInit()
+        initialized = True
         device_count = pynvml.nvmlDeviceGetCount()
 
         for i in range(device_count):
@@ -117,11 +130,16 @@ def detect_gpus() -> List[GPUInfo]:
                 index=i,
             ))
 
-        pynvml.nvmlShutdown()
     except ImportError:
         pass
     except Exception:
         pass
+    finally:
+        if initialized and pynvml is not None:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
 
     return gpus
 

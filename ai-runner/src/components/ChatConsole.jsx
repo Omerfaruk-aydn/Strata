@@ -4,12 +4,13 @@
  * Implements FR-302, FR-303, FR-306, FR-401.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { lazy, Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import useSessionStore from '../store/useSessionStore';
 import useModelStore from '../store/useModelStore';
 import useSettingsStore from '../store/useSettingsStore';
 import { useTranslation } from '../i18n/useTranslation';
-import MessageBubble from './MessageBubble';
+import { apiFetch } from '../api/client';
+const MessageBubble = lazy(() => import('./MessageBubble'));
 import './ChatConsole.css';
 
 export default function ChatConsole() {
@@ -53,15 +54,13 @@ export default function ChatConsole() {
     const fetchBudget = async () => {
       try {
         const systemPromptVal = params.systemPrompt || defaultSystemPrompt || '';
-        const res = await fetch(`http://127.0.0.1:8420/api/optimizer/prompt-budget?context_length=${maxContextLength}`, {
+        const res = await apiFetch(`/api/optimizer/prompt-budget?context_length=${maxContextLength}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(messages.map(m => ({ role: m.role, content: m.content }))),
         });
-        if (res.ok) {
-          const data = await res.json();
-          setTokenUsage(data);
-        }
+        const data = await res.json();
+        setTokenUsage(data);
       } catch (err) {
         console.error("Budget fetch error:", err);
       }
@@ -134,7 +133,7 @@ export default function ChatConsole() {
             )}
           </div>
         ) : (
-          <>
+          <Suspense fallback={<div className="text-small">Mesajlar hazırlanıyor…</div>}>
             {messages.map((msg) => (
               <MessageBubble
                 key={msg.id}
@@ -152,7 +151,7 @@ export default function ChatConsole() {
                 streaming={true}
               />
             )}
-          </>
+          </Suspense>
         )}
         <div ref={messagesEndRef} />
       </div>

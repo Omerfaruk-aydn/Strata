@@ -4,7 +4,7 @@
  * Implements FR-101–FR-106.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import useModelStore from '../store/useModelStore';
 import { useTranslation } from '../i18n/useTranslation';
 import ModelCard from './ModelCard';
@@ -26,17 +26,17 @@ export default function ModelShelf({ collapsed = false }) {
   }, [fetchLocalModels]);
 
   // Debounced search
-  const handleSearch = useCallback((value) => {
-    setQuery(value);
-    if (value.trim().length >= 2) {
-      setActiveTab('search');
-      const timer = setTimeout(() => searchModels(value.trim()), 400);
-      return () => clearTimeout(timer);
-    } else if (value.trim().length === 0) {
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
       setActiveTab('local');
       clearSearch();
+      return undefined;
     }
-  }, [searchModels, clearSearch]);
+    setActiveTab('search');
+    const timer = setTimeout(() => searchModels(trimmed), 400);
+    return () => clearTimeout(timer);
+  }, [query, searchModels, clearSearch]);
 
   if (collapsed) return null;
 
@@ -58,7 +58,7 @@ export default function ModelShelf({ collapsed = false }) {
             className="search-input"
             placeholder={t('models.search_placeholder')}
             value={query}
-            onChange={(e) => handleSearch(e.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             id="model-search-input"
           />
           {query && (
@@ -96,7 +96,11 @@ export default function ModelShelf({ collapsed = false }) {
         {activeTab === 'local' ? (
           localModels.length > 0 ? (
             localModels.map((model) => (
-              <ModelCard key={model.id} model={model} isLocal={true} />
+              <ModelCard
+                key={`${model.id}:${model.downloaded_quant || 'unknown'}:${model.local_path || ''}`}
+                model={model}
+                isLocal={true}
+              />
             ))
           ) : (
             <div className="shelf-empty">

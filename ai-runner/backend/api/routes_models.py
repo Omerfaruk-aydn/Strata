@@ -4,9 +4,10 @@ Implements endpoints from Section 10 for model management.
 """
 
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
+import os
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List
 import json
 import logging
@@ -21,41 +22,83 @@ from ..core.memory_manager import (
 from ..core.inference_engine import engine, InferenceParams, EngineConfig
 from ..models.model_manager import model_manager, DownloadProgress
 from ..db import session_store
+from .auth import require_api_access
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/models", tags=["models"])
+router = APIRouter(
+    prefix="/api/models",
+    tags=["models"],
+    dependencies=[Depends(require_api_access)],
+)
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _validate_gpu_selection(hardware, selected_gpu: int, tensor_split=None) -> None:
+    gpu_count = len(hardware.gpus)
+    if selected_gpu < 0 or (gpu_count and selected_gpu >= gpu_count) or (not gpu_count and selected_gpu != 0):
+        raise HTTPException(status_code=422, detail="Seçilen GPU indeksi sistemde bulunmuyor.")
+    if tensor_split is not None and len(tensor_split) != gpu_count:
+        raise HTTPException(
+            status_code=422,
+            detail="tensor_split uzunluğu algılanan GPU sayısıyla aynı olmalıdır.",
+        )
 
 
 # ── Request/Response Models ──
 
 class PlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     quant: str = "Q4_K_M"
-    context_length: int = 4096
-    n_gpu_layers: Optional[int] = None
+    context_length: int = Field(default=4096, ge=512, le=1_048_576)
+    n_gpu_layers: Optional[int] = Field(default=None, ge=-1, le=10_000)
+    selected_gpu_index: int = Field(default=0, ge=0, le=128)
 
 
 class LoadRequest(BaseModel):
     """Model yükleme isteği — tüm performans optimizasyon parametrelerini içerir."""
+    model_config = ConfigDict(extra="forbid")
+
     quant: str = "Q4_K_M"
-    n_gpu_layers: Optional[int] = None
-    context_length: int = 4096
-    n_threads: Optional[int] = None
+    n_gpu_layers: Optional[int] = Field(default=None, ge=-1, le=10_000)
+    context_length: int = Field(default=4096, ge=512, le=1_048_576)
+    n_threads: Optional[int] = Field(default=None, ge=1, le=1_024)
     use_mmap: bool = True
     use_mlock: bool = True
-    n_batch: int = 512
+    n_batch: int = Field(default=512, ge=1, le=65_536)
     # KV Cache quantization: "q4_0" | "q5_0" | "q5_1" | "q8_0" | "f16"
     kv_cache_type: str = "q4_0"
     # Flash Attention (requires compatible llama-cpp build)
     flash_attn: bool = True
-    # Speculative Decoding draft model (optional)
+    # Deprecated compatibility fields; prompt lookup decoding uses no draft model.
     draft_model_path: Optional[str] = None
     draft_n_gpu_layers: int = -1
+    speculative_decoding: bool = False
+    draft_num_pred_tokens: int = Field(default=10, ge=1, le=64)
     # Smart Context Shifting
     cache_context_shift: bool = True
+    selected_gpu_index: int = Field(default=0, ge=0, le=128)
+    tensor_split: Optional[List[float]] = Field(default=None, max_length=128)
+
+    @field_validator("tensor_split")
+    @classmethod
+    def validate_tensor_split(cls, value: Optional[List[float]]) -> Optional[List[float]]:
+        if value is None:
+            return None
+        if not value or any(part <= 0 for part in value):
+            raise ValueError("tensor_split pozitif oranlardan oluşmalıdır")
+        total = sum(value)
+        return [round(part / total, 6) for part in value]
 
 
 class DownloadRequest(BaseModel):
-    quant: str = "Q4_K_M"
+    model_config = ConfigDict(extra="forbid")
+    quant: str = Field(default="Q4_K_M", pattern=r"^[A-Za-z0-9_.-]{1,40}$")
 
 
 # ── Endpoints ──
@@ -65,7 +108,8 @@ async def search_models(q: str = Query("", description="Search query")):
     """FR-101: Search HuggingFace Hub for GGUF models."""
     try:
         results = await model_manager.search_models(q, limit=20)
-        hardware = get_hardware_profile()
+        selected_gpu = int(await session_store.get_setting("selected_gpu_index", 0))
+        hardware = get_hardware_profile(selected_gpu=selected_gpu)
 
         # Add compatibility badges (FR-103)
         models_with_badges = []
@@ -91,7 +135,7 @@ async def download_model(model_id: str, request: DownloadRequest):
     FR-102: Start a model download with SSE progress.
     Returns Server-Sent Events stream.
     """
-    progress_queue = asyncio.Queue()
+    progress_queue = asyncio.Queue(maxsize=64)
 
     def on_progress(progress: DownloadProgress):
         try:
@@ -100,14 +144,24 @@ async def download_model(model_id: str, request: DownloadRequest):
             pass
 
     async def event_stream():
+        cache_limit_gb = await session_store.get_setting("cache_size_limit_gb", 50)
+        used_bytes = sum(
+            os.path.getsize(os.path.join(model_manager.model_dir, name))
+            for name in os.listdir(model_manager.model_dir)
+            if name.lower().endswith(".gguf")
+        )
+        max_file_bytes = max(int(cache_limit_gb * 1024 ** 3) - used_bytes, 0)
+
         # Start download in background
         download_task = asyncio.create_task(
             model_manager.download_model(
                 model_id=model_id,
                 quant=request.quant,
                 progress_callback=on_progress,
+                max_file_bytes=max_file_bytes,
             )
         )
+        terminal_status = None
 
         try:
             while not download_task.done():
@@ -115,17 +169,29 @@ async def download_model(model_id: str, request: DownloadRequest):
                     progress = await asyncio.wait_for(
                         progress_queue.get(), timeout=1.0
                     )
+                    terminal_status = progress.status if progress.status in {"completed", "paused", "error"} else terminal_status
                     yield f"data: {progress.model_dump_json()}\n\n"
                 except asyncio.TimeoutError:
                     # Send keepalive
                     yield f"data: {json.dumps({'status': 'downloading'})}\n\n"
 
-            # Get the result
             result = await download_task
-            yield f"data: {json.dumps({'status': 'completed', 'path': result})}\n\n"
+            while not progress_queue.empty():
+                progress = progress_queue.get_nowait()
+                terminal_status = progress.status if progress.status in {"completed", "paused", "error"} else terminal_status
+                yield f"data: {progress.model_dump_json()}\n\n"
 
+            if result and terminal_status != "completed":
+                yield f"data: {json.dumps({'status': 'completed', 'progress': 1.0, 'path': result})}\n\n"
+            elif not result and terminal_status != "paused":
+                yield f"data: {json.dumps({'status': 'paused'})}\n\n"
+
+        except asyncio.CancelledError:
+            model_manager.cancel_download(model_id)
+            raise
         except Exception as e:
-            yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+            if terminal_status != "error":
+                yield f"data: {json.dumps({'status': 'error', 'error': str(e)})}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -137,12 +203,21 @@ async def download_model(model_id: str, request: DownloadRequest):
     )
 
 
+@router.post("/{model_id:path}/download/cancel")
+async def cancel_model_download(model_id: str):
+    """Pause an active download while preserving its partial file."""
+    if not model_manager.cancel_download(model_id):
+        raise HTTPException(status_code=409, detail="Bu model için etkin bir indirme yok.")
+    return {"status": "cancelling", "model_id": model_id}
+
+
 @router.get("/local")
 async def list_local_models():
     """FR-105: List all locally downloaded models."""
     try:
         models = model_manager.get_local_models()
-        hardware = get_hardware_profile()
+        selected_gpu = int(await session_store.get_setting("selected_gpu_index", 0))
+        hardware = get_hardware_profile(selected_gpu=selected_gpu)
 
         results = []
         for model in models:
@@ -162,9 +237,23 @@ async def list_local_models():
 
 
 @router.delete("/local/{model_id:path}")
-async def delete_local_model(model_id: str):
+async def delete_local_model(
+    model_id: str,
+    quant: Optional[str] = Query(None, pattern=r"^[A-Za-z0-9_.-]{1,40}$"),
+):
     """FR-105: Delete a locally downloaded model."""
-    success = model_manager.delete_model(model_id)
+    candidates = [
+        model for model in model_manager.get_local_models()
+        if model.id == model_id and (quant is None or model.downloaded_quant == quant)
+    ]
+    if not candidates:
+        raise HTTPException(status_code=404, detail="Model bulunamadı")
+
+    active_path = os.path.abspath(engine.model_info.model_path) if engine.model_info else None
+    if any(active_path and os.path.abspath(model.local_path or "") == active_path for model in candidates):
+        raise HTTPException(status_code=409, detail="Yüklü model silinmeden önce bellekten çıkarılmalıdır.")
+
+    success = model_manager.delete_model(model_id, quant=quant)
     if not success:
         raise HTTPException(status_code=404, detail="Model bulunamadı")
     return {"status": "deleted", "model_id": model_id}
@@ -177,7 +266,8 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
     Returns layer distribution and performance estimates.
     """
     try:
-        hardware = get_hardware_profile()
+        hardware = get_hardware_profile(selected_gpu=request.selected_gpu_index)
+        _validate_gpu_selection(hardware, request.selected_gpu_index)
 
         # Try to find model in local or search results
         local_models = model_manager.get_local_models()
@@ -208,6 +298,8 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
 
         return plan.model_dump()
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Plan error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -231,32 +323,33 @@ async def load_model(model_id: str, request: LoadRequest):
                 detail="Model yerel olarak bulunamadı. Önce indirin."
             )
 
-        # Read saved settings directly from SQLite DB (ensures frontend/backend state sync)
-        db_context_length = await session_store.get_setting("max_context_length")
-        context_length = int(db_context_length) if db_context_length else request.context_length
+        async def effective(request_field: str, setting_key: str):
+            request_value = getattr(request, request_field)
+            if request_field in request.model_fields_set:
+                return request_value
+            return await session_store.get_setting(setting_key, request_value)
 
-        db_threads = await session_store.get_setting("n_threads")
-        n_threads = int(db_threads) if (db_threads and db_threads != "null") else request.n_threads
+        context_length = int(await effective("context_length", "max_context_length"))
+        n_threads_value = await effective("n_threads", "n_threads")
+        n_threads = int(n_threads_value) if n_threads_value is not None else None
+        use_mlock = _as_bool(await effective("use_mlock", "use_mlock"))
+        use_mmap = _as_bool(await effective("use_mmap", "use_mmap"))
+        n_batch = int(await effective("n_batch", "n_batch"))
+        kv_cache_type = str(await effective("kv_cache_type", "kv_cache_type"))
+        flash_attn = _as_bool(await effective("flash_attn", "flash_attn"))
+        cache_context_shift = _as_bool(await effective("cache_context_shift", "cache_context_shift"))
+        auto_context_prune = _as_bool(await session_store.get_setting("auto_context_prune", True))
+        speculative_decoding = _as_bool(await effective("speculative_decoding", "speculative_decoding"))
+        draft_num_pred_tokens = int(await effective("draft_num_pred_tokens", "draft_num_pred_tokens"))
+        selected_gpu_index = int(await effective("selected_gpu_index", "selected_gpu_index"))
+        tensor_split = await effective("tensor_split", "tensor_split")
 
-        db_mlock = await session_store.get_setting("use_mlock")
-        use_mlock = (db_mlock == "true") if db_mlock is not None else request.use_mlock
-
-        db_mmap = await session_store.get_setting("use_mmap")
-        use_mmap = (db_mmap == "true") if db_mmap is not None else request.use_mmap
-
-        db_batch = await session_store.get_setting("n_batch")
-        n_batch = int(db_batch) if db_batch else request.n_batch
-
-        db_kv_type = await session_store.get_setting("kv_cache_type")
-        kv_cache_type = db_kv_type if db_kv_type else request.kv_cache_type
-
-        db_flash = await session_store.get_setting("flash_attn")
-        flash_attn = (db_flash == "true") if db_flash is not None else request.flash_attn
+        hardware = get_hardware_profile(selected_gpu=selected_gpu_index)
+        _validate_gpu_selection(hardware, selected_gpu_index, tensor_split)
 
         # Calculate offload plan if no manual override
         n_gpu_layers = request.n_gpu_layers
         if n_gpu_layers is None:
-            hardware = get_hardware_profile()
             file_size_mb = model.file_size_bytes / (1024 * 1024)
             total_layers = estimate_total_layers(model.parameter_count or 7_000_000_000)
             plan = calculate_offload_plan(
@@ -281,14 +374,20 @@ async def load_model(model_id: str, request: LoadRequest):
             flash_attn=flash_attn,
             draft_model_path=request.draft_model_path,
             draft_n_gpu_layers=request.draft_n_gpu_layers,
-            cache_context_shift=request.cache_context_shift,
+            cache_context_shift=cache_context_shift,
+            auto_context_prune=auto_context_prune,
+            speculative_decoding=speculative_decoding,
+            draft_num_pred_tokens=draft_num_pred_tokens,
+            main_gpu=selected_gpu_index,
+            tensor_split=tensor_split,
         )
 
         # Load the model with full optimization config
-        info = engine.load_model(
-            model_id=model_id,
-            model_path=model.local_path,
-            config=config,
+        info = await asyncio.to_thread(
+            engine.load_model,
+            model_id,
+            model.local_path,
+            config,
         )
 
         model_manager.update_last_used(model_id)
@@ -318,6 +417,5 @@ async def get_optimizations():
 @router.post("/unload")
 async def unload_model():
     """Unload the active model from memory."""
-    engine.unload_model()
+    await asyncio.to_thread(engine.unload_model)
     return {"status": "unloaded"}
-

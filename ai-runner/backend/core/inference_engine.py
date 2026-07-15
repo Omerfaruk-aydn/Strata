@@ -5,11 +5,11 @@ Implements FR-301 through FR-307.
 
 Performance Optimizations:
   - KV Cache 4-bit quantization (type_k=4, type_v=4) → ~50% less VRAM
-  - Flash Attention → 20-40% faster on long contexts
+  - Flash Attention for supported backends and long contexts
   - Memory Lock (mlock) → prevents OS from swapping model to disk
   - Physical-core thread auto-detection → 10-15% CPU improvement
-  - Speculative Decoding (draft model) → 2-3x token speed
-  - Smart Context Shifting → no re-evaluation penalty on long chats
+  - Prompt lookup decoding without a second draft model
+  - Context-window pruning that keeps the system prompt and latest turn
 """
 
 import asyncio
@@ -17,7 +17,7 @@ import gc
 import time
 import threading
 from typing import Optional, AsyncGenerator, Dict, Any, Callable, List
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 import logging
 import psutil
 
@@ -61,18 +61,29 @@ class EngineConfig(BaseModel):
     # KV Cache quantization — default q4_0 = ~50% VRAM saving vs f16
     kv_cache_type: str = "q4_0"
 
-    # Flash Attention — 20-40% faster on long contexts (requires CUDA/Metal)
+    # Flash Attention — backend-dependent acceleration for long contexts
     flash_attn: bool = True
 
-    # Speculative Decoding — draft model path (optional, 2-3x speed when set)
+    # Deprecated draft-model fields retained for configuration compatibility.
+    # AI Runner uses llama.cpp prompt lookup decoding instead.
     draft_model_path: Optional[str] = None
     draft_n_gpu_layers: int = -1
 
-    # Smart Context Shifting — avoids full re-eval when context fills
+    # Compatibility name retained for persisted settings. This controls the
+    # application-level message pruning; llama-cpp-python does not expose the
+    # old low-level context-shift switch.
     cache_context_shift: bool = True
 
     # Multi-GPU support: split weights proportionally (e.g. [0.7, 0.3])
     tensor_split: Optional[List[float]] = None
+    main_gpu: int = 0
+
+    # llama-cpp-python supported speculative mode: prompt lookup decoding.
+    speculative_decoding: bool = False
+    draft_num_pred_tokens: int = 10
+
+    # Conversation pruning is independent from the low-level KV shift option.
+    auto_context_prune: bool = True
 
     @field_validator("kv_cache_type")
     @classmethod
@@ -91,7 +102,7 @@ class InferenceParams(BaseModel):
     top_k: int = 40
     repeat_penalty: float = 1.1
     max_tokens: int = 2048
-    stop: List[str] = []
+    stop: List[str] = Field(default_factory=list)
     system_prompt: str = ""
 
     @field_validator("temperature")
@@ -132,6 +143,7 @@ class ModelInfo(BaseModel):
     has_draft_model: bool = False
     cache_context_shift: bool = False
     tensor_split: Optional[List[float]] = None
+    main_gpu: int = 0
 
 
 def _get_physical_cores() -> int:
@@ -152,11 +164,11 @@ class InferenceEngine:
 
     Performance features:
       • KV Cache quantization (4-bit default)
-      • Flash Attention
+      • Flash Attention on supported backends
       • mlock (OS swap prevention)
       • Physical-core threading
-      • Speculative Decoding via draft model
-      • Smart Context Shifting
+      • Prompt lookup decoding without a second model
+      • Context-window message pruning
     """
 
     def __init__(self):
@@ -224,6 +236,8 @@ class InferenceEngine:
             )
 
         with self._lock:
+            if self._is_generating:
+                raise RuntimeError("Üretim sürerken model değiştirilemez. Önce üretimi durdurun.")
             # FR-307: Unload previous model first
             if self._model is not None:
                 self._unload_internal()
@@ -264,11 +278,18 @@ class InferenceEngine:
                     "type_k":        kv_type_int,   # KV key cache type
                     "type_v":        kv_type_int,   # KV value cache type
                     "verbose":       False,
+                    "main_gpu":      config.main_gpu,
                 }
 
                 # Multi-GPU support (tensor_split)
                 if config.tensor_split:
                     kwargs["tensor_split"] = config.tensor_split
+
+                if config.speculative_decoding:
+                    from llama_cpp.llama_speculative import LlamaPromptLookupDecoding
+                    kwargs["draft_model"] = LlamaPromptLookupDecoding(
+                        num_pred_tokens=config.draft_num_pred_tokens,
+                    )
 
                 # Flash Attention — guard: only pass if llama_cpp supports it
                 try:
@@ -281,16 +302,6 @@ class InferenceEngine:
                 except Exception:
                     pass  # Older llama-cpp-python — skip silently
 
-                # Cache context shift — guard same way
-                try:
-                    import inspect
-                    sig = inspect.signature(Llama.__init__)
-                    if "last_n_tokens_size" in sig.parameters and config.cache_context_shift:
-                        # last_n_tokens_size controls shift window
-                        kwargs["last_n_tokens_size"] = min(256, config.context_length // 4)
-                except Exception:
-                    pass
-
                 if progress_callback:
                     progress_callback(0.20, "Ana model belleğe yükleniyor...")
 
@@ -301,27 +312,7 @@ class InferenceEngine:
                 if progress_callback:
                     progress_callback(0.75, "Ana model hazır.")
 
-                # ── Optional: Speculative Decoding Draft Model ───────────────
-                has_draft = False
-                if config.draft_model_path:
-                    try:
-                        draft_kwargs = {
-                            "model_path":   config.draft_model_path,
-                            "n_gpu_layers": config.draft_n_gpu_layers,
-                            "n_ctx":        config.context_length,
-                            "use_mmap":     config.use_mmap,
-                            "use_mlock":    config.use_mlock,
-                            "n_threads":    resolved_threads,
-                            "verbose":      False,
-                        }
-                        if progress_callback:
-                            progress_callback(0.80, "Taslak model (Speculative Decoding) yükleniyor...")
-                        self._draft_model = Llama(**draft_kwargs)
-                        has_draft = True
-                        logger.info(f"Draft model loaded: {config.draft_model_path}")
-                    except Exception as e:
-                        logger.warning(f"Draft model yüklenemedi (spekülatif çözme devre dışı): {e}")
-                        self._draft_model = None
+                has_draft = config.speculative_decoding
 
                 if progress_callback:
                     progress_callback(0.90, "Model metadata okunuyor...")
@@ -348,6 +339,7 @@ class InferenceEngine:
                     has_draft_model=has_draft,
                     cache_context_shift=config.cache_context_shift,
                     tensor_split=config.tensor_split,
+                    main_gpu=config.main_gpu,
                 )
 
                 if progress_callback:
@@ -361,8 +353,8 @@ class InferenceEngine:
                     f"flash_attn={config.flash_attn} | "
                     f"mlock={config.use_mlock} | "
                     f"threads={resolved_threads} | "
-                    f"draft={'yes' if has_draft else 'no'} | "
-                    f"ctx_shift={config.cache_context_shift}"
+                    f"speculative={'yes' if has_draft else 'no'} | "
+                    f"context_prune={config.auto_context_prune}"
                 )
 
                 return self._model_info
@@ -381,6 +373,8 @@ class InferenceEngine:
     def unload_model(self) -> None:
         """FR-307: Safely unload the current model from memory."""
         with self._lock:
+            if self._is_generating:
+                raise RuntimeError("Üretim sürerken model bellekten kaldırılamaz.")
             self._unload_internal()
 
     def _unload_internal(self) -> None:
@@ -417,12 +411,13 @@ class InferenceEngine:
         max_tokens_estimate: int = 3800,
     ) -> List[Dict[str, str]]:
         """
-        Smart Context Shifting: if the conversation history is likely to
-        exceed the context window, trim the oldest non-system messages while
+        If the conversation history is likely to exceed the context window,
+        trim the oldest non-system messages while
         always keeping the system prompt and the latest user message.
 
-        This avoids the expensive full re-evaluation that happens when the
-        context fills and the model has to restart from scratch.
+        This keeps the final prompt within the configured context budget. The
+        low-level llama.cpp context-shift switch is not exposed by the Python
+        wrapper, so this is deliberately implemented as message pruning.
 
         Args:
             messages:             Full message list (formatted, with system msg)
@@ -431,12 +426,14 @@ class InferenceEngine:
         Returns:
             Trimmed message list safe for the current context window.
         """
-        if not self._config or not self._config.cache_context_shift:
+        if (
+            not self._config
+            or not self._config.cache_context_shift
+            or not self._config.auto_context_prune
+        ):
             return messages
 
-        # Rough estimate: 1 token ≈ 4 chars (English/code heavy prompts)
-        total_chars = sum(len(m.get("content", "")) for m in messages)
-        estimated_tokens = total_chars // 4
+        estimated_tokens = self.count_prompt_tokens(messages)
 
         if estimated_tokens <= max_tokens_estimate:
             return messages
@@ -448,14 +445,14 @@ class InferenceEngine:
         # Always keep the last user message + previous assistant turn
         tail = dialogue[-2:] if len(dialogue) >= 2 else dialogue
 
-        # Trim from the front until we're under budget
+        # Trim complete oldest turns from the front until we're under budget.
         remaining = dialogue[:-2] if len(dialogue) >= 2 else []
         while remaining:
             check = system_msgs + remaining + tail
-            chars = sum(len(m.get("content", "")) for m in check)
-            if chars // 4 <= max_tokens_estimate:
+            if self.count_prompt_tokens(check) <= max_tokens_estimate:
                 break
-            remaining = remaining[1:]  # drop oldest message pair
+            drop_count = 2 if len(remaining) >= 2 and remaining[0].get("role") == "user" else 1
+            remaining = remaining[drop_count:]
 
         trimmed = system_msgs + remaining + tail
         dropped = len(dialogue) - len(remaining) - len(tail)
@@ -463,6 +460,11 @@ class InferenceEngine:
             logger.debug(
                 f"Context shift: dropped {dropped} old messages "
                 f"to stay within {max_tokens_estimate} token budget."
+            )
+        if self.count_prompt_tokens(trimmed) > max_tokens_estimate:
+            raise ValueError(
+                "Sistem promptu veya son ileti bağlam penceresine sığmıyor; "
+                "daha kısa bir prompt ya da daha büyük context_length kullanın."
             )
         return trimmed
 
@@ -482,66 +484,58 @@ class InferenceEngine:
             - result: InferenceResult (for "done")
             - error: error message (for "error")
         """
-        if self._model is None:
-            yield {"type": "error", "error": "Yüklü model yok"}
+        start_error = self._begin_generation()
+        if start_error:
+            yield {"type": "error", "error": start_error}
             return
 
-        if self._is_generating:
-            yield {"type": "error", "error": "Zaten bir üretim devam ediyor"}
-            return
-
-        self._is_generating = True
-        self._should_stop = False
-        self._stop_event.clear()
-
+        producer = None
         try:
-            # Build prompt — apply context shift if needed
-            ctx_limit = self._config.context_length if self._config else 4096
-            shift_budget = int(ctx_limit * 0.92)  # 92% of context as safety margin
-            raw_messages = self._format_messages(messages, params.system_prompt)
-            prompt_messages = self._apply_context_shift(raw_messages, shift_budget)
+            prompt_messages = self._prepare_prompt(messages, params)
 
             start_time = time.perf_counter()
             first_token_time: Optional[float] = None
             generated_text = ""
             token_count = 0
+            finish_reason = "stop"
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            queue: asyncio.Queue = asyncio.Queue()
+            sentinel = object()
+            model = self._model
 
-            # Run inference in thread pool — keeps event loop responsive
-            stream = await loop.run_in_executor(
-                None,
-                lambda: self._model.create_chat_completion(
-                    messages=prompt_messages,
-                    temperature=params.temperature,
-                    top_p=params.top_p,
-                    top_k=params.top_k,
-                    repeat_penalty=params.repeat_penalty,
-                    max_tokens=params.max_tokens,
-                    stop=params.stop if params.stop else None,
-                    stream=True,
-                )
-            )
+            def produce() -> None:
+                try:
+                    stream = model.create_chat_completion(
+                        messages=prompt_messages,
+                        temperature=params.temperature,
+                        top_p=params.top_p,
+                        top_k=params.top_k,
+                        repeat_penalty=params.repeat_penalty,
+                        max_tokens=params.max_tokens,
+                        stop=params.stop if params.stop else None,
+                        stream=True,
+                    )
+                    for produced_chunk in stream:
+                        if self._stop_event.is_set():
+                            break
+                        loop.call_soon_threadsafe(queue.put_nowait, produced_chunk)
+                except Exception as exc:
+                    loop.call_soon_threadsafe(queue.put_nowait, exc)
+                finally:
+                    loop.call_soon_threadsafe(queue.put_nowait, sentinel)
 
-            for chunk in stream:
-                if self._should_stop:
-                    yield {
-                        "type": "done",
-                        "result": InferenceResult(
-                            content=generated_text,
-                            tokens_generated=token_count,
-                            tokens_per_sec=self._calc_speed(token_count, start_time),
-                            ttft_ms=((first_token_time - start_time) * 1000) if first_token_time else 0.0,
-                            total_time_ms=(time.perf_counter() - start_time) * 1000,
-                            stopped_by_user=True,
-                            finish_reason="user_interrupt",
-                        ).model_dump(),
-                    }
-                    return
+            producer = loop.run_in_executor(None, produce)
 
+            while True:
+                chunk = await queue.get()
+                if chunk is sentinel:
+                    break
+                if isinstance(chunk, Exception):
+                    raise chunk
                 delta = chunk.get("choices", [{}])[0].get("delta", {})
                 token_text = delta.get("content", "")
-                finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
+                chunk_finish_reason = chunk.get("choices", [{}])[0].get("finish_reason")
 
                 if token_text:
                     if first_token_time is None:
@@ -556,21 +550,24 @@ class InferenceEngine:
                         "tokens_per_sec": self._calc_speed(token_count, start_time),
                     }
 
-                if finish_reason:
-                    break
+                if chunk_finish_reason:
+                    finish_reason = chunk_finish_reason
 
-                await asyncio.sleep(0)
+            await producer
 
             end_time = time.perf_counter()
+            actual_tokens = self.count_text_tokens(generated_text) or token_count
+            stopped = self._stop_event.is_set()
             yield {
                 "type": "done",
                 "result": InferenceResult(
                     content=generated_text,
-                    tokens_generated=token_count,
-                    tokens_per_sec=self._calc_speed(token_count, start_time),
+                    tokens_generated=actual_tokens,
+                    tokens_per_sec=round(actual_tokens / max(end_time - start_time, 0.001), 1),
                     ttft_ms=((first_token_time - start_time) * 1000) if first_token_time else 0.0,
                     total_time_ms=(end_time - start_time) * 1000,
-                    finish_reason="stop",
+                    stopped_by_user=stopped,
+                    finish_reason="user_interrupt" if stopped else finish_reason,
                 ).model_dump(),
             }
 
@@ -579,8 +576,10 @@ class InferenceEngine:
             yield {"type": "error", "error": str(e)}
 
         finally:
-            self._is_generating = False
-            self._should_stop = False
+            if producer is not None and not producer.done():
+                self._stop_event.set()
+                await producer
+            self._finish_generation()
 
     def generate_sync(
         self,
@@ -591,40 +590,101 @@ class InferenceEngine:
         Non-streaming generation for OpenAI-compatible API.
         FR-501: /v1/chat/completions non-streaming mode.
         """
-        if self._model is None:
-            raise RuntimeError("Yüklü model yok")
+        start_error = self._begin_generation()
+        if start_error:
+            raise RuntimeError(start_error)
 
+        try:
+            prompt_messages = self._prepare_prompt(messages, params)
+            start_time = time.perf_counter()
+
+            result = self._model.create_chat_completion(
+                messages=prompt_messages,
+                temperature=params.temperature,
+                top_p=params.top_p,
+                top_k=params.top_k,
+                repeat_penalty=params.repeat_penalty,
+                max_tokens=params.max_tokens,
+                stop=params.stop if params.stop else None,
+                stream=False,
+            )
+
+            elapsed = time.perf_counter() - start_time
+            content = result["choices"][0]["message"]["content"]
+            tokens = result.get("usage", {}).get("completion_tokens") or self.count_text_tokens(content)
+
+            return InferenceResult(
+                content=content,
+                tokens_generated=tokens,
+                tokens_per_sec=round(tokens / elapsed, 1) if elapsed > 0 else 0.0,
+                ttft_ms=0.0,
+                total_time_ms=elapsed * 1000,
+                finish_reason=result["choices"][0].get("finish_reason", "stop"),
+            )
+        finally:
+            self._finish_generation()
+
+    def _begin_generation(self) -> Optional[str]:
+        with self._lock:
+            if self._model is None:
+                return "Yüklü model yok"
+            if self._is_generating:
+                return "Zaten bir üretim devam ediyor"
+            self._is_generating = True
+            self._should_stop = False
+            self._stop_event.clear()
+        return None
+
+    def _finish_generation(self) -> None:
+        with self._lock:
+            self._is_generating = False
+            self._should_stop = False
+            self._stop_event.clear()
+
+    def _prepare_prompt(
+        self,
+        messages: List[Dict[str, str]],
+        params: InferenceParams,
+    ) -> List[Dict[str, str]]:
         ctx_limit = self._config.context_length if self._config else 4096
+        if params.max_tokens >= ctx_limit - 32:
+            raise ValueError(
+                f"max_tokens ({params.max_tokens}) bağlam boyutundan ({ctx_limit}) küçük olmalıdır."
+            )
+
+        prompt_budget = max(64, int(ctx_limit * 0.96) - params.max_tokens)
         raw_messages = self._format_messages(messages, params.system_prompt)
-        prompt_messages = self._apply_context_shift(raw_messages, int(ctx_limit * 0.92))
+        prompt_tokens = self.count_prompt_tokens(raw_messages)
+        pruning_enabled = bool(self._config and self._config.auto_context_prune)
+        if prompt_tokens > prompt_budget and not pruning_enabled:
+            raise ValueError(
+                "İleti geçmişi bağlam penceresine sığmıyor. Otomatik kırpmayı etkinleştirin."
+            )
+        prepared = self._apply_context_shift(raw_messages, prompt_budget)
+        if self.count_prompt_tokens(prepared) > prompt_budget:
+            raise ValueError(
+                "İleti geçmişi bağlam penceresine sığmıyor; otomatik bağlam kırpmayı etkinleştirin "
+                "veya daha kısa bir geçmiş kullanın."
+            )
+        return prepared
 
-        start_time = time.perf_counter()
+    def count_text_tokens(self, text: str) -> int:
+        if not text:
+            return 0
+        try:
+            tokens = self._model.tokenize(text.encode("utf-8"), add_bos=False)
+            if isinstance(tokens, (list, tuple)):
+                return len(tokens)
+        except Exception:
+            pass
+        return max(1, len(text) // 4)
 
-        result = self._model.create_chat_completion(
-            messages=prompt_messages,
-            temperature=params.temperature,
-            top_p=params.top_p,
-            top_k=params.top_k,
-            repeat_penalty=params.repeat_penalty,
-            max_tokens=params.max_tokens,
-            stop=params.stop if params.stop else None,
-            stream=False,
+    def count_prompt_tokens(self, messages: List[Dict[str, str]]) -> int:
+        serialized = "\n".join(
+            f"{message.get('role', 'user')}: {message.get('content', '')}"
+            for message in messages
         )
-
-        end_time = time.perf_counter()
-        elapsed = end_time - start_time
-
-        content = result["choices"][0]["message"]["content"]
-        tokens = result.get("usage", {}).get("completion_tokens", len(content.split()))
-
-        return InferenceResult(
-            content=content,
-            tokens_generated=tokens,
-            tokens_per_sec=round(tokens / elapsed, 1) if elapsed > 0 else 0.0,
-            ttft_ms=0.0,
-            total_time_ms=elapsed * 1000,
-            finish_reason=result["choices"][0].get("finish_reason", "stop"),
-        )
+        return self.count_text_tokens(serialized)
 
     def _format_messages(
         self,
@@ -659,9 +719,11 @@ class InferenceEngine:
             "use_mlock":           self._config.use_mlock,
             "use_mmap":            self._config.use_mmap,
             "n_threads":           self._config.n_threads or _get_physical_cores(),
-            "speculative_decoding": self._draft_model is not None,
+            "speculative_decoding": self._config.speculative_decoding,
             "context_shift":       self._config.cache_context_shift,
             "tensor_split":        self._config.tensor_split,
+            "main_gpu":            self._config.main_gpu,
+            "auto_context_prune":  self._config.auto_context_prune,
         }
 
 

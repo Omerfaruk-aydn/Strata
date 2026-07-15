@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import useOptimizerStore from '../store/useOptimizerStore';
+import useSettingsStore from '../store/useSettingsStore';
 import './SystemOptimizer.css';
 
 const RISK_META = {
@@ -361,18 +362,32 @@ function HacksTab() {
     applyWindowsPerformance, createLauncher, applyNvidiaTweak,
     isLoading
   } = useOptimizerStore();
+  const { tensorSplit, saveSettings } = useSettingsStore();
 
   const [winPerfResult, setWinPerfResult] = useState(null);
   const [launcherResult, setLauncherResult] = useState(null);
   const [nvidiaResult, setNvidiaResult] = useState(null);
+  const [splitSaved, setSplitSaved] = useState(false);
 
   useEffect(() => {
     fetchGpuProfile();
   }, []);
 
   const handleWinPerf = async () => {
+    const confirmed = window.confirm(
+      'Bu işlem Windows görsel efektleri ayarını kalıcı olarak “En iyi performans” moduna alır. Devam edilsin mi?'
+    );
+    if (!confirmed) return;
     const res = await applyWindowsPerformance();
     setWinPerfResult(res);
+  };
+
+  const handleVramFlush = async () => {
+    const confirmed = window.confirm(
+      'AI Runner ve WebView yardımcı süreçlerinin çalışma belleği daraltılacak. Devam edilsin mi?'
+    );
+    if (!confirmed) return;
+    await triggerVramFlush();
   };
 
   const handleCreateLauncher = async () => {
@@ -385,6 +400,17 @@ function HacksTab() {
     setNvidiaResult(res);
   };
 
+  const applyTensorSplit = async () => {
+    const success = await saveSettings({
+      tensorSplit: gpuProfile.tensor_split_recommended,
+      selectedGpuIndex: 0,
+    });
+    if (success) {
+      setSplitSaved(true);
+      setTimeout(() => setSplitSaved(false), 2000);
+    }
+  };
+
   if (isLoading && !gpuProfile) {
     return <div className="opt-loading">GPU profilleri analiz ediliyor...</div>;
   }
@@ -392,9 +418,9 @@ function HacksTab() {
   return (
     <div className="opt-tab-content animate-fade-in">
       <div className="opt-section-header">
-        <h3>🚀 İleri Düzey Donanım Hileleri</h3>
+        <h3>🚀 İleri Düzey Donanım Ayarları</h3>
         <p className="text-small">
-          Mevcut ekran kartı ve işlemcinizden ekstra güç almak için yazılımsal bypass ve donanım limitleme hilelerini uygulayın.
+          Süreç önceliği, WebView belleği ve sürücü seçeneklerini kontrollü biçimde yönetin.
         </p>
       </div>
 
@@ -402,19 +428,19 @@ function HacksTab() {
         {/* Hack 1: VRAM Flush */}
         <div className="opt-hack-card">
           <div className="opt-hack-card-header">
-            <h4>🧼 Windows VRAM Temizleyici (Flush VRAM)</h4>
+            <h4>🧼 AI Runner / WebView Bellek Daraltma</h4>
             <span className="opt-badge-pill recommend">Önerilen</span>
           </div>
           <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
-            Tauri arayüzü ve tarayıcıların VRAM önbelleğini temizler. Windows'u masaüstü bellek sayfalarını boşaltmaya zorlar.
+            Yalnızca AI Runner ve WebView yardımcı süreçlerinin çalışma setini daraltır. Sürücünün VRAM boşaltması garanti edilmez.
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'auto' }}>
-            <button className="btn btn-secondary btn-sm" onClick={triggerVramFlush}>
-              🧹 Belleği Boşalt (Flush)
+            <button className="btn btn-secondary btn-sm" onClick={handleVramFlush}>
+              🧹 Çalışma Belleğini Daralt
             </button>
             {vramFlushResult && (
               <span className="text-small" style={{ color: 'var(--color-green)' }}>
-                ✓ {vramFlushResult.webview_processes_flushed || 0} süreç temizlendi!
+                ✓ {vramFlushResult.webview_processes_flushed || 0} yardımcı süreç işlendi
               </span>
             )}
           </div>
@@ -449,10 +475,10 @@ function HacksTab() {
         <div className="opt-hack-card">
           <div className="opt-hack-card-header">
             <h4>🖥️ Windows Görsel Efektlerini Kapat (VRAM Modu)</h4>
-            <span className="opt-badge-pill recommend">Önerilen</span>
+            <span className="opt-badge-pill recommend">Kalıcı Ayar</span>
           </div>
           <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
-            Windows'un pencerelerini en iyi performansa alarak pencerelerin ekran kartında işgal ettiği VRAM yükünü sıfırlar (~500MB VRAM).
+            Windows görsel efektlerini “En iyi performans” moduna alır. Değişiklik kullanıcı profilinde kalıcıdır.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
             <button className="btn btn-secondary btn-sm" onClick={handleWinPerf}>
@@ -470,17 +496,17 @@ function HacksTab() {
         <div className="opt-hack-card">
           <div className="opt-hack-card-header">
             <h4>🚀 Sıfır VRAM Başlatıcı Oluştur (.bat)</h4>
-            <span className="opt-badge-pill speed">~400MB Tasarruf</span>
+            <span className="opt-badge-pill speed">CPU Arayüz Modu</span>
           </div>
           <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
-            Proje klasörünüze, Tauri UI arayüzünün ekran kartını kullanmasını tamamen engelleyen bir başlatıcı script dosyası yazar.
+            Masaüstüne, WebView2 donanım hızlandırmasını kapatarak kurulu AI Runner'ı başlatan bir script yazar.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
             <button className="btn btn-secondary btn-sm" onClick={handleCreateLauncher}>
               💾 Başlatıcı Script Üret
             </button>
             {launcherResult && (
-              <span className="text-small" style={{ color: launcherResult.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)' }}>
+              <span className="text-small" style={{ color: ['ok', 'exists'].includes(launcherResult.status) ? 'var(--color-green)' : 'var(--color-red)' }}>
                 {launcherResult.message}
               </span>
             )}
@@ -494,15 +520,15 @@ function HacksTab() {
             <span className="opt-badge-pill speed">Sistem Kilitlenmesi Önleyici</span>
           </div>
           <p className="text-small" style={{ margin: 'var(--space-2) 0' }}>
-            VRAM dolduğunda sürücünün yavaş RAM'i kullanıp sistemi yavaşlatmasını engeller, CUDA'yı yüksek hızlı VRAM'de çalışmaya zorlar.
+            NVIDIA'nın CUDA sistem belleği geri dönüş ayarını nereden değiştireceğinizi gösterir; kayıt defterine otomatik yazmaz.
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', marginTop: 'auto' }}>
             <button className="btn btn-secondary btn-sm" onClick={handleNvidiaTweak}>
-              🛡️ RAM Taşmasını Engelle (Tweak)
+              🛡️ Güvenli Yapılandırma Talimatını Göster
             </button>
             {nvidiaResult && (
               <div style={{ marginTop: 'var(--space-1)' }}>
-                <span className="text-small" style={{ color: nvidiaResult.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)', display: 'block', marginBottom: 'var(--space-2)' }}>
+                <span className="text-small" style={{ color: nvidiaResult.status === 'error' ? 'var(--color-red)' : 'var(--text-secondary)', display: 'block', marginBottom: 'var(--space-2)' }}>
                   {nvidiaResult.message}
                 </span>
                 {nvidiaResult.status === 'admin_required' && nvidiaResult.powershell_command && (
@@ -546,9 +572,16 @@ function HacksTab() {
           <div className="opt-recommendation" style={{ marginTop: 'var(--space-3)' }}>
             <span className="opt-rec-icon">⚙️</span>
             <p>
-              Modelleri yüklerken çıkarım motoru bu oranları otomatik olarak kullanır. Donanım gücünü birleştirmek VRAM sınırınızı artırır.
+              Bu oranları kaydederseniz sonraki model yüklemesinde çıkarım motoruna gönderilir.
             </p>
           </div>
+          <button
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: 'var(--space-3)' }}
+            onClick={applyTensorSplit}
+          >
+            {splitSaved ? '✓ Oranlar Kaydedildi' : (tensorSplit ? 'Oranları Güncelle' : 'Önerilen Oranları Uygula')}
+          </button>
         </div>
       )}
 

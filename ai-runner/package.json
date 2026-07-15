@@ -2,10 +2,19 @@
   "name": "ai-runner",
   "private": true,
   "version": "1.0.0",
+  "description": "Local GGUF model runner with a FastAPI backend and Tauri desktop shell",
+  "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "sidecar:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-sidecar.ps1",
+    "sidecar:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-sidecar.ps1",
+    "desktop:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
     "preview": "vite preview",
     "tauri": "tauri"
   },

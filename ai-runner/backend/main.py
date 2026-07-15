@@ -23,7 +23,7 @@ if sys.platform == "win32":
 import logging
 import logging.handlers
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # ── Logging Setup ──
@@ -55,6 +55,7 @@ from .api.routes_settings import router as settings_router
 from .api.ws_telemetry import router as telemetry_router
 from .api.routes_optimizer import router as optimizer_router
 from .db import session_store
+from .api.auth import TRUSTED_BROWSER_ORIGINS, require_api_access
 
 
 # ── Application Lifecycle ──
@@ -65,6 +66,10 @@ async def lifespan(app: FastAPI):
     logger.info("AI Runner backend starting...")
     await session_store.init_db()
     await session_store.ensure_default_settings()
+    from .models.model_manager import model_manager
+    model_dir = await session_store.get_setting("model_dir")
+    if model_dir:
+        model_manager.set_model_dir(model_dir)
     logger.info("Database initialized")
     yield
     logger.info("AI Runner backend shutting down...")
@@ -84,13 +89,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:1420",
-        "http://localhost:5173",
-        "http://127.0.0.1:1420",
-        "http://127.0.0.1:5173",
-        "tauri://localhost",
-    ],
+    allow_origins=sorted(TRUSTED_BROWSER_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -108,7 +107,7 @@ async def root():
     return {"name": "AI Runner", "version": "1.0.0", "status": "running"}
 
 
-@app.get("/api/status")
+@app.get("/api/status", dependencies=[Depends(require_api_access)])
 async def status():
     from .core.inference_engine import engine
     from .core.hardware_profile import get_hardware_profile
@@ -124,5 +123,5 @@ async def status():
 
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8420, reload=True)
+    from .cli import run
+    run()
