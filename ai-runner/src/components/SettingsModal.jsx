@@ -200,6 +200,8 @@ export default function SettingsModal({ isOpen, onClose }) {
           {/* Advanced Tab */}
           {activeTab === 'advanced' && (
             <div className="settings-section animate-fade-in">
+
+              {/* Advanced Mode toggle */}
               <div className="setting-row">
                 <div className="setting-info">
                   <label>{t('settings.advanced_mode')}</label>
@@ -215,22 +217,91 @@ export default function SettingsModal({ isOpen, onClose }) {
                 </label>
               </div>
 
+              <div className="setting-divider" />
+              <p className="settings-section-title">⚡ Performans Optimizasyonları</p>
+
+              {/* KV Cache Quantization */}
               <div className="setting-row">
                 <div className="setting-info">
-                  <label>{t('settings.threads')}</label>
+                  <label>🗜️ KV Önbellek Tipi</label>
+                  <span className="text-small">
+                    Düşük bit = daha az VRAM kullanımı. <strong>q4_0</strong> önerilir (%50 tasarruf).
+                  </span>
                 </div>
-                <input
-                  type="number"
-                  className="setting-input-small"
-                  value={localSettings.nThreads || ''}
-                  onChange={(e) => update('nThreads', e.target.value ? parseInt(e.target.value) : null)}
-                  placeholder="Otomatik"
-                />
+                <select
+                  className="setting-select"
+                  value={localSettings.kvCacheType || 'q4_0'}
+                  onChange={(e) => update('kvCacheType', e.target.value)}
+                >
+                  <option value="q4_0">4-bit / q4_0 — Minimum VRAM (%50 tasarruf) ⚡</option>
+                  <option value="q5_0">5-bit / q5_0 — Dengeli</option>
+                  <option value="q5_1">5-bit / q5_1 — Dengeli+</option>
+                  <option value="q8_0">8-bit / q8_0 — Yüksek Kalite</option>
+                  <option value="f16">16-bit / f16 — Varsayılan (max VRAM)</option>
+                </select>
               </div>
 
+              {/* Flash Attention */}
               <div className="setting-row">
                 <div className="setting-info">
-                  <label>{t('settings.mmap')}</label>
+                  <label>⚡ Flash Attention</label>
+                  <span className="text-small">
+                    Uzun bağlamlarda %20–40 hız artışı. CUDA/Metal gerektirir.
+                  </span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.flashAttn ?? true}
+                    onChange={(e) => update('flashAttn', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              {/* Memory Lock */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>🔒 Bellek Kilitleme (mlock)</label>
+                  <span className="text-small">
+                    İşletim sisteminin model ağırlıklarını diske (swap) yazmasını engeller.
+                  </span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.useMlock ?? true}
+                    onChange={(e) => update('useMlock', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              {/* Context Shifting */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>🔄 Akıllı Bağlam Kaydırma</label>
+                  <span className="text-small">
+                    Bağlam dolduğunda eski mesajları kırparak tam yeniden hesaplamayı önler.
+                  </span>
+                </div>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.cacheContextShift ?? true}
+                    onChange={(e) => update('cacheContextShift', e.target.checked)}
+                  />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              {/* Memory Mapped I/O */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>🗂️ Bellek Eşlemeli G/Ç (mmap)</label>
+                  <span className="text-small">
+                    Modeli diske eşleyerek RAM kullanımını azaltır (SSD önerilir).
+                  </span>
                 </div>
                 <label className="toggle-switch">
                   <input
@@ -242,9 +313,35 @@ export default function SettingsModal({ isOpen, onClose }) {
                 </label>
               </div>
 
+              <div className="setting-divider" />
+              <p className="settings-section-title">🔧 Düşük Seviye Ayarlar</p>
+
+              {/* CPU Threads */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>{t('settings.threads')}</label>
+                  <span className="text-small">
+                    Boş bırakın = sadece fiziksel çekirdekler kullanılır (önerilir).
+                  </span>
+                </div>
+                <input
+                  type="number"
+                  className="setting-input-small"
+                  value={localSettings.nThreads || ''}
+                  onChange={(e) => update('nThreads', e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="Otomatik"
+                  min={1}
+                  max={64}
+                />
+              </div>
+
+              {/* Batch Size */}
               <div className="setting-row">
                 <div className="setting-info">
                   <label>{t('settings.batch_size')}</label>
+                  <span className="text-small">
+                    Prompt işleme batch boyutu. Büyük değer = hızlı ön işleme, daha fazla VRAM.
+                  </span>
                 </div>
                 <input
                   type="number"
@@ -252,10 +349,47 @@ export default function SettingsModal({ isOpen, onClose }) {
                   value={localSettings.nBatch || 512}
                   onChange={(e) => update('nBatch', parseInt(e.target.value) || 512)}
                   step={64}
+                  min={64}
+                  max={4096}
                 />
               </div>
+
+              <div className="setting-divider" />
+              <p className="settings-section-title">🚀 Spekülatif Çözme (Speculative Decoding)</p>
+              <p className="text-small" style={{ marginBottom: '0.75rem', opacity: 0.7 }}>
+                Büyük modelin yanına küçük bir taslak model ekleyerek 2–3x hız artışı sağlar.
+                Taslak model (örn. 1B–3B) hızlıca token tahmin eder, büyük model onaylar.
+              </p>
+
+              {/* Draft Model Path */}
+              <div className="setting-row setting-row-vertical">
+                <label>🤏 Taslak Model Yolu (.gguf)</label>
+                <input
+                  className="setting-input"
+                  value={localSettings.draftModelPath || ''}
+                  onChange={(e) => update('draftModelPath', e.target.value)}
+                  placeholder="C:\models\llama-3-1b.Q4_K_M.gguf (opsiyonel)"
+                />
+              </div>
+
+              {/* Draft GPU Layers */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>GPU Katmanları (Taslak)</label>
+                  <span className="text-small">-1 = tümü GPU'ya</span>
+                </div>
+                <input
+                  type="number"
+                  className="setting-input-small"
+                  value={localSettings.draftNGpuLayers ?? -1}
+                  onChange={(e) => update('draftNGpuLayers', parseInt(e.target.value))}
+                  min={-1}
+                />
+              </div>
+
             </div>
           )}
+
 
           {/* API Tab */}
           {activeTab === 'api' && (

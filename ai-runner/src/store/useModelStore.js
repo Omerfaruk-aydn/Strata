@@ -112,7 +112,7 @@ const useModelStore = create((set, get) => ({
     }
   },
 
-  /** Load model into memory for inference */
+  /** Load model into memory for inference with all performance optimizations */
   loadModel: async (modelId, options = {}) => {
     set({ loadingModelId: modelId, error: null });
     try {
@@ -120,12 +120,23 @@ const useModelStore = create((set, get) => ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          quant: options.quant || 'Q4_K_M',
-          n_gpu_layers: options.nGpuLayers ?? null,
-          context_length: options.contextLength || 4096,
-          n_threads: options.nThreads ?? null,
-          use_mmap: options.useMmap ?? true,
-          n_batch: options.nBatch || 512,
+          quant:               options.quant              || 'Q4_K_M',
+          n_gpu_layers:        options.nGpuLayers         ?? null,
+          context_length:      options.contextLength       || 4096,
+          n_threads:           options.nThreads            ?? null,
+          n_batch:             options.nBatch              || 512,
+          // Memory
+          use_mmap:            options.useMmap             ?? true,
+          use_mlock:           options.useMlock            ?? true,
+          // KV Cache quantization (default: q4_0 = 50% VRAM saving)
+          kv_cache_type:       options.kvCacheType         || 'q4_0',
+          // Flash Attention
+          flash_attn:          options.flashAttn           ?? true,
+          // Smart Context Shifting
+          cache_context_shift: options.cacheContextShift   ?? true,
+          // Speculative Decoding (optional)
+          draft_model_path:    options.draftModelPath       || null,
+          draft_n_gpu_layers:  options.draftNGpuLayers      ?? -1,
         }),
       });
 
@@ -136,7 +147,8 @@ const useModelStore = create((set, get) => ({
 
       const data = await res.json();
       set({
-        activeModel: data.model,
+        activeModel:    data.model,
+        optimizations:  data.optimizations || {},
         loadingModelId: null,
       });
       return data.model;
@@ -145,6 +157,7 @@ const useModelStore = create((set, get) => ({
       throw err;
     }
   },
+
 
   /** Unload active model */
   unloadModel: async () => {

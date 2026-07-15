@@ -34,12 +34,23 @@ class PlanRequest(BaseModel):
 
 
 class LoadRequest(BaseModel):
+    """Model yükleme isteği — tüm performans optimizasyon parametrelerini içerir."""
     quant: str = "Q4_K_M"
     n_gpu_layers: Optional[int] = None
     context_length: int = 4096
     n_threads: Optional[int] = None
     use_mmap: bool = True
+    use_mlock: bool = True
     n_batch: int = 512
+    # KV Cache quantization: "q4_0" | "q5_0" | "q5_1" | "q8_0" | "f16"
+    kv_cache_type: str = "q4_0"
+    # Flash Attention (requires compatible llama-cpp build)
+    flash_attn: bool = True
+    # Speculative Decoding draft model (optional)
+    draft_model_path: Optional[str] = None
+    draft_n_gpu_layers: int = -1
+    # Smart Context Shifting
+    cache_context_shift: bool = True
 
 
 class DownloadRequest(BaseModel):
@@ -203,7 +214,11 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
 
 @router.post("/{model_id:path}/load")
 async def load_model(model_id: str, request: LoadRequest):
-    """Load a model into memory for inference."""
+    """
+    Load a model into memory for inference.
+    All performance optimizations (KV cache, Flash Attention, mlock,
+    speculative decoding, context shifting) are forwarded via EngineConfig.
+    """
     try:
         # Find the local model
         local_models = model_manager.get_local_models()
@@ -231,15 +246,26 @@ async def load_model(model_id: str, request: LoadRequest):
             )
             n_gpu_layers = plan.gpu_layers
 
-        # Load the model
+        # Build EngineConfig with all optimizations
+        config = EngineConfig(
+            n_gpu_layers=n_gpu_layers,
+            context_length=request.context_length,
+            n_batch=request.n_batch,
+            use_mmap=request.use_mmap,
+            use_mlock=request.use_mlock,
+            n_threads=request.n_threads,
+            kv_cache_type=request.kv_cache_type,
+            flash_attn=request.flash_attn,
+            draft_model_path=request.draft_model_path,
+            draft_n_gpu_layers=request.draft_n_gpu_layers,
+            cache_context_shift=request.cache_context_shift,
+        )
+
+        # Load the model with full optimization config
         info = engine.load_model(
             model_id=model_id,
             model_path=model.local_path,
-            n_gpu_layers=n_gpu_layers,
-            context_length=request.context_length,
-            n_threads=request.n_threads,
-            use_mmap=request.use_mmap,
-            n_batch=request.n_batch,
+            config=config,
         )
 
         model_manager.update_last_used(model_id)
@@ -247,6 +273,7 @@ async def load_model(model_id: str, request: LoadRequest):
         return {
             "status": "loaded",
             "model": info.model_dump(),
+            "optimizations": engine.get_optimization_summary(),
         }
 
     except HTTPException:
@@ -256,8 +283,18 @@ async def load_model(model_id: str, request: LoadRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/optimizations")
+async def get_optimizations():
+    """Return active optimization flags for the loaded model."""
+    return {
+        "loaded": engine.is_loaded,
+        "optimizations": engine.get_optimization_summary() if engine.is_loaded else {},
+    }
+
+
 @router.post("/unload")
 async def unload_model():
     """Unload the active model from memory."""
     engine.unload_model()
     return {"status": "unloaded"}
+

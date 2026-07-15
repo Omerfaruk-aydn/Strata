@@ -250,3 +250,48 @@
   border-top: 1px solid var(--border-hairline);
   flex-shrink: 0;
 }
+
+/* Section sub-title for grouped settings */
+.settings-section-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent-primary);
+  margin: 0 0 var(--space-3) 0;
+  padding: 0;
+}
+
+/* Native <select> styled to match the design system */
+.setting-select {
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  min-width: 260px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  padding-right: var(--space-8);
+  transition: border-color var(--duration-fast);
+}
+
+.setting-select:hover {
+  border-color: var(--border-focus);
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 20%, transparent);
+}
+
+.setting-select option {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}

@@ -25,6 +25,14 @@ const useSettingsStore = create((set, get) => ({
   advancedMode: false,
   isLoaded: false,
 
+  // ── Performance Optimization Settings ──
+  kvCacheType: 'q4_0',        // KV Cache quantization: q4_0 | q5_0 | q8_0 | f16
+  flashAttn: true,            // Flash Attention (20-40% speed boost on long ctx)
+  useMlock: true,             // Lock model in RAM — prevents OS swap
+  cacheContextShift: true,    // Smart context shifting (no re-eval penalty)
+  draftModelPath: '',         // Speculative decoding draft model path
+  draftNGpuLayers: -1,        // GPU layers for draft model (-1 = all)
+
   // ── Actions ──
 
   /** Load settings from backend */
@@ -49,6 +57,13 @@ const useSettingsStore = create((set, get) => ({
         apiPort: s.api_port || 8420,
         apiKey: s.api_key || null,
         advancedMode: s.advanced_mode || false,
+        // Performance
+        kvCacheType: s.kv_cache_type || 'q4_0',
+        flashAttn: s.flash_attn ?? true,
+        useMlock: s.use_mlock ?? true,
+        cacheContextShift: s.cache_context_shift ?? true,
+        draftModelPath: s.draft_model_path || '',
+        draftNGpuLayers: s.draft_n_gpu_layers ?? -1,
         isLoaded: true,
       });
 
@@ -78,6 +93,13 @@ const useSettingsStore = create((set, get) => ({
       apiPort: 'api_port',
       apiKey: 'api_key',
       advancedMode: 'advanced_mode',
+      // Performance
+      kvCacheType: 'kv_cache_type',
+      flashAttn: 'flash_attn',
+      useMlock: 'use_mlock',
+      cacheContextShift: 'cache_context_shift',
+      draftModelPath: 'draft_model_path',
+      draftNGpuLayers: 'draft_n_gpu_layers',
     };
 
     for (const [key, value] of Object.entries(updates)) {
