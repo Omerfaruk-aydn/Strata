@@ -5,6 +5,21 @@ FastAPI application with CORS, routers, and database initialization.
 
 import os
 import sys
+
+# --- Dynamic CUDA DLL directory loader for Windows ---
+if sys.platform == "win32":
+    for path in sys.path:
+        nvidia_path = os.path.join(path, "nvidia")
+        if os.path.isdir(nvidia_path):
+            for sub in os.listdir(nvidia_path):
+                bin_path = os.path.join(nvidia_path, sub, "bin")
+                if os.path.isdir(bin_path):
+                    try:
+                        os.add_dll_directory(bin_path)
+                        os.environ["PATH"] = bin_path + os.path.pathsep + os.environ["PATH"]
+                    except Exception:
+                        pass
+
 import logging
 import logging.handlers
 from contextlib import asynccontextmanager

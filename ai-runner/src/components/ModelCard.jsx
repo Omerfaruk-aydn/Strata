@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { useTranslation } from '../i18n/useTranslation';
 import useModelStore from '../store/useModelStore';
+import useSettingsStore from '../store/useSettingsStore';
 import './ModelCard.css';
 
 function formatBytes(bytes) {
@@ -43,8 +44,19 @@ export default function ModelCard({ model, isLocal = false, onSelect }) {
 
   const handleLoad = async () => {
     try {
+      const settings = useSettingsStore.getState();
       await loadModel(model.id, {
-        quant: model.downloaded_quant || 'Q4_K_M',
+        quant:              model.downloaded_quant || 'Q4_K_M',
+        contextLength:      settings.maxContextLength,
+        nThreads:           settings.nThreads,
+        nBatch:             settings.nBatch,
+        useMmap:            settings.useMmap,
+        useMlock:           settings.useMlock,
+        kvCacheType:        settings.kvCacheType,
+        flashAttn:          settings.flashAttn,
+        cacheContextShift:  settings.cacheContextShift,
+        draftModelPath:     settings.draftModelPath,
+        draftNGpuLayers:    settings.draftNGpuLayers,
       });
     } catch (e) { /* handled in store */ }
   };
