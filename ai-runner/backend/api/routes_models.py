@@ -18,7 +18,7 @@ from ..core.memory_manager import (
     estimate_model_size_mb,
     estimate_total_layers,
 )
-from ..core.inference_engine import engine, InferenceParams
+from ..core.inference_engine import engine, InferenceParams, EngineConfig
 from ..models.model_manager import model_manager, DownloadProgress
 
 logger = logging.getLogger(__name__)

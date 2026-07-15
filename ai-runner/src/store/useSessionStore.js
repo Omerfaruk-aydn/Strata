@@ -5,6 +5,7 @@
  */
 
 import { create } from 'zustand';
+import useTelemetryStore from './useTelemetryStore';
 
 const API_BASE = 'http://127.0.0.1:8420';
 
@@ -201,6 +202,8 @@ const useSessionStore = create((set, get) => ({
                 streamingTokens: data.tokens_generated || 0,
                 streamingSpeed: data.tokens_per_sec || 0,
               });
+              // Forward metric to telemetry store dynamically
+              useTelemetryStore.getState().updateGenerationMetrics(data.tokens_per_sec || 0, 0);
             } else if (data.type === 'done') {
               const result = data.result || {};
               const assistantMsg = {
@@ -215,6 +218,11 @@ const useSessionStore = create((set, get) => ({
                 isGenerating: false,
                 streamingContent: '',
               }));
+              // Forward final token/sec and TTFT to telemetry store
+              useTelemetryStore.getState().updateGenerationMetrics(
+                result.tokens_per_sec || 0,
+                result.ttft_ms || 0
+              );
             } else if (data.type === 'error') {
               set({ error: data.error, isGenerating: false, streamingContent: '' });
             }
