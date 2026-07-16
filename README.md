@@ -192,7 +192,7 @@ Current capabilities:
 - Pager-backed linear graphs, low-bit attention, SwiGLU MLP layers, and multi-block transformer execution.
 - Automatic `python`/`numpy` execution backend selection with a correctness fallback.
 - LRU layer paging with a hard byte budget.
-- Runtime-managed `sign1` KV cache and experimental `ternary05` cache with sliding-window eviction.
+- Runtime-managed `sign1`, `ternary05`, and experimental `sparse05` KV caches with sliding-window eviction. `sparse05` is sparsity-dependent and reports an estimate; it is not a universal literal half-bit representation for dense activations.
 - API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
 
 The current reference executor is a correctness and format-validation milestone. It is not yet a complete tokenizer-backed conversational implementation, and a `.strata` file cannot be loaded by the existing llama.cpp inference path. IQ1, IQ2, and other unsupported block formats require dedicated decoders before conversion is enabled for them. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
