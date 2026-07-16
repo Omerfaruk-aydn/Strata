@@ -10,6 +10,7 @@ from .ternary import decode_ternary, encode_ternary
 from .kv_cache import PackedKV, decode_kv, encode_kv, estimate_kv_bytes, kv_memory_report
 from .paging import LayerPager, PageEvent
 from .benchmark import run_codec_benchmark
+from .container import StrataContainerReader, StrataContainerWriter, TensorRecord
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -24,4 +25,7 @@ __all__ = [
     "LayerPager",
     "PageEvent",
     "run_codec_benchmark",
+    "StrataContainerReader",
+    "StrataContainerWriter",
+    "TensorRecord",
 ]
