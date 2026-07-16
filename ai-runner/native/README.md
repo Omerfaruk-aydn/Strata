@@ -31,3 +31,7 @@ exposes a stable ABI for GGML IQ1/IQ2/IQ3 dequantization and can be selected
 with `STRATA_IQ_LIBRARY`. The bridge validates type, block size, and element
 count before calling the upstream dequantizer. Without this optional library,
 IQ codecs remain unavailable and are reported as such by the API.
+
+The GGML checkout and the built `ggml` library must match the GGUF type layout
+used by the model. Strata does not copy or reinterpret upstream codebooks, and
+it does not mark IQ support active until the shared library loads successfully.
