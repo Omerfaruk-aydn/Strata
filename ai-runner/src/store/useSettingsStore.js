@@ -48,6 +48,14 @@ const useSettingsStore = create((set, get) => ({
   autoContextPrune: true,     // Trim old messages when they exceed the prompt budget
   selectedGpuIndex: 0,
   tensorSplit: null,
+  contextCompactionMode: 'extractive_summary',
+
+  // ── Extreme Model Mode ──
+  extremeModeEnabled: true,
+  extremePreset: 'maximum_capacity',
+  adaptiveLoad: true,
+  adaptiveMaxAttempts: 6,
+  backendPreference: 'auto',
 
   // ── Actions ──
 
@@ -99,6 +107,12 @@ const useSettingsStore = create((set, get) => ({
         autoContextPrune: s.auto_context_prune ?? true,
         selectedGpuIndex: s.selected_gpu_index ?? 0,
         tensorSplit: s.tensor_split || null,
+        contextCompactionMode: s.context_compaction_mode || 'extractive_summary',
+        extremeModeEnabled: s.extreme_mode_enabled ?? true,
+        extremePreset: s.extreme_preset || 'maximum_capacity',
+        adaptiveLoad: s.adaptive_load ?? true,
+        adaptiveMaxAttempts: s.adaptive_max_attempts || 6,
+        backendPreference: s.backend_preference || 'auto',
         isLoaded: true,
       });
 
@@ -151,6 +165,12 @@ const useSettingsStore = create((set, get) => ({
       autoContextPrune: 'auto_context_prune',
       selectedGpuIndex: 'selected_gpu_index',
       tensorSplit: 'tensor_split',
+      contextCompactionMode: 'context_compaction_mode',
+      extremeModeEnabled: 'extreme_mode_enabled',
+      extremePreset: 'extreme_preset',
+      adaptiveLoad: 'adaptive_load',
+      adaptiveMaxAttempts: 'adaptive_max_attempts',
+      backendPreference: 'backend_preference',
     };
 
     for (const [key, value] of Object.entries(updates)) {

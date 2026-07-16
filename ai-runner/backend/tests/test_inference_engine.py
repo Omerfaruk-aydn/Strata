@@ -8,6 +8,7 @@ import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 import sys
 import os
+from types import ModuleType
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
@@ -46,6 +47,30 @@ class TestInferenceEngine:
         with patch("builtins.__import__", side_effect=mock_import):
             with pytest.raises((RuntimeError, ImportError)):
                 engine.load_model("test/model", "/nonexistent/path.gguf")
+
+    def test_load_reads_architecture_specific_layer_metadata(self):
+        """ModelInfo should report qwen/mistral/etc. layers, not only llama.*."""
+        from backend.core.inference_engine import EngineConfig
+
+        class FakeLlama:
+            def __init__(self, **kwargs):
+                self.metadata = {
+                    "general.architecture": "qwen2",
+                    "qwen2.block_count": "96",
+                }
+
+        fake_module = ModuleType("llama_cpp")
+        fake_module.Llama = FakeLlama
+        engine = InferenceEngine()
+        with patch.dict(sys.modules, {"llama_cpp": fake_module}):
+            info = engine.load_model(
+                "test/qwen-100b",
+                "C:/models/qwen.gguf",
+                EngineConfig(n_gpu_layers=20, use_mlock=False),
+            )
+
+        assert info.total_layers == 96
+        engine.unload_model()
 
     def test_inference_params_defaults(self):
         params = InferenceParams()
@@ -147,6 +172,13 @@ class TestEngineConfig:
         import pydantic
         with pytest.raises((ValueError, pydantic.ValidationError)):
             EngineConfig(kv_cache_type="q2_0")
+
+    def test_backend_preference_is_normalized_and_validated(self):
+        from backend.core.inference_engine import EngineConfig
+
+        assert EngineConfig(backend_preference="CUDA").backend_preference == "cuda"
+        with pytest.raises(ValueError):
+            EngineConfig(backend_preference="directml")
 
     def test_draft_model_defaults(self):
         """Draft model should be None by default (speculative decoding off)."""

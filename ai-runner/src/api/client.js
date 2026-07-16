@@ -162,10 +162,15 @@ async function errorFromResponse(response) {
   const detail = typeof data === 'object' && data
     ? data.detail || data.error || data.message
     : data;
+  const detailMessage = typeof detail === 'string'
+    ? detail
+    : Array.isArray(detail?.blockers)
+      ? detail.blockers.join(' ')
+      : (detail?.message || null);
   const fallback = response.status === 401
     ? 'API anahtarı geçersiz veya eksik.'
     : `API isteği başarısız (${response.status}).`;
-  return new ApiError(detail || fallback, response.status, data);
+  return new ApiError(detailMessage || fallback, response.status, data);
 }
 
 export async function apiFetch(path, options = {}) {

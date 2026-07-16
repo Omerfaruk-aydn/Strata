@@ -1,12 +1,12 @@
 """
 AI Runner — Memory Manager / Offload Planner
 Implements the 6-step optimization algorithm from Section 11.
-Calculates n_gpu_layers, RAM layers, disk layers for any model+hardware combo.
+Calculates GPU/CPU offload and file-backed mmap pressure for a model/hardware combo.
 """
 
 import math
-from typing import Optional, List
-from pydantic import BaseModel
+from typing import List, Literal, Optional
+from pydantic import BaseModel, Field
 from .hardware_profile import HardwareProfile
 
 
@@ -18,17 +18,22 @@ class OffloadPlan(BaseModel):
     total_layers: int
     gpu_layers: int
     cpu_layers: int
+    # Deprecated compatibility alias. This is an estimated layer-equivalent
+    # working-set shortfall, not a third llama.cpp execution target.
     disk_streamed_layers: int
     estimated_tokens_per_sec: float
     context_length_recommended: int
     fits_comfortably: bool
-    warnings: List[str] = []
+    warnings: List[str] = Field(default_factory=list)
     recommendation: str = ""
 
     # Detailed breakdown
     vram_usage_mb: float = 0.0
     ram_usage_mb: float = 0.0
     kv_cache_mb: float = 0.0
+    ram_resident_layers: int = 0
+    mapped_pressure_layers: int = 0
+    storage_mode: Literal["gpu_resident", "ram_resident", "memory_mapped"] = "ram_resident"
 
 
 # ── Constants ──
@@ -46,10 +51,10 @@ KV_CACHE_BYTES_PER_TOKEN_PER_LAYER = 256  # bytes, conservative estimate
 # These are rough baselines that get adjusted by hardware
 BASE_SPEED_ALL_GPU = 30.0      # All layers on GPU
 BASE_SPEED_GPU_RAM = 8.0       # Mixed GPU+RAM
-BASE_SPEED_WITH_DISK = 2.0     # Any disk streaming
+BASE_SPEED_WITH_MMAP = 2.0     # File-backed paging pressure
 
-# Disk streaming penalty factor
-DISK_STREAMING_PENALTY = 0.4
+# File-backed mmap pressure penalty factor
+MMAP_PRESSURE_PENALTY = 0.4
 
 # Minimum recommended context length
 MIN_CONTEXT_LENGTH = 512
@@ -203,7 +208,7 @@ def calculate_offload_plan(
         else:
             gpu_layers = 0
 
-    # ── Step 4: RAM and disk distribution ──
+    # ── Step 4: CPU residency and mapped-memory pressure ──
     remaining = total_layers - gpu_layers
 
     usable_ram = hardware.ram.free_mb * RAM_SAFETY_FACTOR
@@ -218,26 +223,29 @@ def calculate_offload_plan(
     else:
         ram_layers = 0
 
-    disk_layers = remaining - ram_layers
+    mapped_pressure_layers = remaining - ram_layers
 
-    # ── Disk streaming warnings ──
-    if disk_layers > 0:
+    # llama.cpp still executes every non-GPU layer on the CPU. This value is
+    # only a layer-equivalent estimate of weights that cannot remain inside
+    # the safe physical-RAM working set and may be faulted back from the GGUF.
+    if mapped_pressure_layers > 0:
         if hardware.disk.type == "HDD":
             warnings.append(
-                "Disk streaming aktif — HDD tespit edildi. "
-                "SSD kullanılması önerilir, aksi halde performans ciddi düşer."
+                "CPU ağırlıklarının çalışma seti fiziksel RAM bütçesini aşıyor ve HDD tespit edildi. "
+                "File-backed mmap baskısı HDD üzerinde çok yavaş olabilir; SSD/NVMe kullanın."
             )
         else:
             warnings.append(
-                f"Disk streaming aktif — SSD tespit edildi ✓ "
-                f"({disk_layers} katman diskten okunacak)"
+                "CPU ağırlıklarının çalışma seti fiziksel RAM bütçesini aşıyor. "
+                f"Yaklaşık {mapped_pressure_layers} katman eşdeğeri ağırlık SSD-backed mmap "
+                "sayfa baskısına girebilir; bunlar ayrı birer 'disk katmanı' değildir."
             )
 
     # ── Step 5: Speed estimation ──
     estimated_speed = _estimate_speed(
         gpu_layers=gpu_layers,
         ram_layers=ram_layers,
-        disk_layers=disk_layers,
+        mapped_pressure_layers=mapped_pressure_layers,
         total_layers=total_layers,
         vram_total=hardware.gpu.vram_total_mb,
         is_hdd=hardware.disk.type == "HDD",
@@ -247,12 +255,12 @@ def calculate_offload_plan(
     if gpu_layers == total_layers:
         # All on GPU — can support full context
         context_recommended = context_length
-    elif disk_layers > 0:
-        # Disk streaming — reduce context to save memory
+    elif mapped_pressure_layers > 0:
+        # Mapped-memory pressure — reduce context to save physical memory.
         context_recommended = min(context_length, 2048)
         if context_length > 2048:
             warnings.append(
-                f"Disk streaming nedeniyle context penceresi {context_recommended} "
+                f"Mapped-memory baskısı nedeniyle context penceresi {context_recommended} "
                 f"olarak önerilir (istenen: {context_length})."
             )
     else:
@@ -260,7 +268,7 @@ def calculate_offload_plan(
 
     # ── Comfort assessment ──
     fits_comfortably = (
-        disk_layers == 0 and
+        mapped_pressure_layers == 0 and
         gpu_layers >= total_layers * 0.3 and
         len([w for w in warnings if "OOM" in w]) == 0
     )
@@ -274,7 +282,7 @@ def calculate_offload_plan(
         quant=quant,
         gpu_layers=gpu_layers,
         ram_layers=ram_layers,
-        disk_layers=disk_layers,
+        mapped_pressure_layers=mapped_pressure_layers,
         total_layers=total_layers,
         estimated_speed=estimated_speed,
         hardware=hardware,
@@ -285,8 +293,8 @@ def calculate_offload_plan(
         quant=quant,
         total_layers=total_layers,
         gpu_layers=gpu_layers,
-        cpu_layers=ram_layers,
-        disk_streamed_layers=disk_layers,
+        cpu_layers=remaining,
+        disk_streamed_layers=mapped_pressure_layers,
         estimated_tokens_per_sec=round(estimated_speed, 1),
         context_length_recommended=context_recommended,
         fits_comfortably=fits_comfortably,
@@ -295,13 +303,20 @@ def calculate_offload_plan(
         vram_usage_mb=round(vram_usage, 1),
         ram_usage_mb=round(ram_usage, 1),
         kv_cache_mb=round(kv_cache_mb, 1),
+        ram_resident_layers=ram_layers,
+        mapped_pressure_layers=mapped_pressure_layers,
+        storage_mode=(
+            "gpu_resident" if gpu_layers == total_layers
+            else "memory_mapped" if mapped_pressure_layers > 0
+            else "ram_resident"
+        ),
     )
 
 
 def _estimate_speed(
     gpu_layers: int,
     ram_layers: int,
-    disk_layers: int,
+    mapped_pressure_layers: int,
     total_layers: int,
     vram_total: int,
     is_hdd: bool,
@@ -309,18 +324,17 @@ def _estimate_speed(
     """
     Step 5 from Section 11: Rough speed estimation.
     GPU ratio increases token/s logarithmically.
-    Disk streaming adds severe penalty.
+    File-backed mmap pressure adds a severe and hardware-dependent penalty.
     """
     if total_layers == 0:
         return 0.0
 
     gpu_ratio = gpu_layers / total_layers
 
-    if disk_layers > 0:
-        # Disk streaming active — heavy penalty
-        base = BASE_SPEED_WITH_DISK
-        disk_penalty = DISK_STREAMING_PENALTY if not is_hdd else DISK_STREAMING_PENALTY * 0.3
-        speed = base * (1 + gpu_ratio) * disk_penalty
+    if mapped_pressure_layers > 0:
+        base = BASE_SPEED_WITH_MMAP
+        mmap_penalty = MMAP_PRESSURE_PENALTY if not is_hdd else MMAP_PRESSURE_PENALTY * 0.3
+        speed = base * (1 + gpu_ratio) * mmap_penalty
     elif ram_layers > 0:
         # Mixed GPU + RAM
         speed = BASE_SPEED_GPU_RAM * (1 + math.log2(1 + gpu_ratio * 3))
@@ -347,7 +361,7 @@ def _generate_recommendation(
     quant: str,
     gpu_layers: int,
     ram_layers: int,
-    disk_layers: int,
+    mapped_pressure_layers: int,
     total_layers: int,
     estimated_speed: float,
     hardware: HardwareProfile,
@@ -360,10 +374,10 @@ def _generate_recommendation(
             f"{quant} seçildi — tüm {total_layers} katman GPU'da çalışacak. "
             f"Tahmini hız: ~{estimated_speed:.1f} token/sn."
         )
-    elif disk_layers > 0:
+    elif mapped_pressure_layers > 0:
         parts.append(
-            f"{quant} ile kısmi disk streaming gerekir "
-            f"({disk_layers} katman diskten okunacak). "
+            f"{quant} ile {gpu_layers} katman GPU'da, {total_layers - gpu_layers} katman CPU'da çalışacak. "
+            f"Yaklaşık {mapped_pressure_layers} katman eşdeğeri ağırlık mmap sayfa baskısına girebilir. "
             f"Tahmini hız: ~{estimated_speed:.1f} token/sn."
         )
         # Suggest a lower quant
@@ -374,7 +388,7 @@ def _generate_recommendation(
         if current_idx > 0:
             suggested = lower_quants[current_idx - 1]
             parts.append(
-                f"{suggested} seçilirse disk streaming gerekmeyebilir."
+                f"{suggested} seçilirse mapped-memory baskısı azalabilir."
             )
     else:
         parts.append(
@@ -395,7 +409,7 @@ def suggest_best_quant(
 ) -> dict:
     """
     Given a model and hardware, suggest the best quantization level.
-    Returns the quant that provides the best quality without disk streaming.
+    Returns the quant that provides the best quality without mapped-memory pressure.
     Implements Section 12 logic.
     """
     results = []
@@ -440,7 +454,9 @@ def suggest_best_quant(
                 "quant": r["quant"],
                 "fits_comfortably": r["plan"].fits_comfortably,
                 "estimated_speed": r["plan"].estimated_tokens_per_sec,
-                "disk_streaming": r["plan"].disk_streamed_layers > 0,
+                "mapped_memory_pressure": r["plan"].mapped_pressure_layers > 0,
+                # Deprecated response key retained for older clients.
+                "disk_streaming": r["plan"].mapped_pressure_layers > 0,
             }
             for r in results[1:5]  # Top 4 alternatives
         ],
@@ -450,13 +466,13 @@ def suggest_best_quant(
 def _score_plan(plan: OffloadPlan, quant: str) -> float:
     """
     Score an offload plan for ranking.
-    Higher quality quant is preferred IF it doesn't require disk streaming.
+    Higher quality quant is preferred if it avoids mapped-memory pressure.
     """
     bpw = QUANT_BPW.get(quant, 4.8)
     quality_score = bpw * 10  # Higher bits = higher quality
 
-    # Penalty for disk streaming
-    if plan.disk_streamed_layers > 0:
+    # Penalty for mapped-memory pressure
+    if plan.mapped_pressure_layers > 0:
         quality_score -= 100  # Heavy penalty
 
     # Penalty for not fitting comfortably

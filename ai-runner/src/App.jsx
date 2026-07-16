@@ -16,6 +16,7 @@ import TelemetryPanel from './components/TelemetryPanel';
 import SessionList from './components/SessionList';
 import SettingsModal from './components/SettingsModal';
 import SystemOptimizer from './components/SystemOptimizer';
+import ExtremeModelCenter from './components/ExtremeModelCenter';
 import { configureApi, waitForApi } from './api/client';
 import './App.css';
 
@@ -25,6 +26,7 @@ export default function App() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [optimizerOpen, setOptimizerOpen] = useState(false);
+  const [extremeOpen, setExtremeOpen] = useState(false);
   const [showSessions, setShowSessions] = useState(true);
   const [startupState, setStartupState] = useState('starting');
   const [startupError, setStartupError] = useState('');
@@ -88,6 +90,12 @@ export default function App() {
     if (isMod && e.shiftKey && e.key.toLowerCase() === 'o') {
       e.preventDefault();
       setOptimizerOpen(true);
+    }
+
+    // Ctrl/Cmd + Shift + E: Open Extreme Model Center
+    if (isMod && e.shiftKey && e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      setExtremeOpen(true);
     }
 
     // Ctrl/Cmd + B: Toggle left sidebar
@@ -174,6 +182,13 @@ export default function App() {
           >
             💬 {t('chat.sessions')}
           </button>
+          <button
+            className="btn btn-ghost btn-sm header-extreme-button"
+            onClick={() => setExtremeOpen(true)}
+            title="Extreme Model Center (Ctrl+Shift+E)"
+          >
+            <span aria-hidden="true">◆</span> Extreme Mode
+          </button>
         </div>
 
         <div className="header-right">
@@ -232,6 +247,9 @@ export default function App() {
 
       {/* ── System Optimizer Modal ── */}
       <SystemOptimizer isOpen={optimizerOpen} onClose={() => setOptimizerOpen(false)} />
+
+      {/* ── Extreme Model Center ── */}
+      <ExtremeModelCenter isOpen={extremeOpen} onClose={() => setExtremeOpen(false)} />
 
       {/* ── Error Toast ── */}
       {(error || modelError) && (

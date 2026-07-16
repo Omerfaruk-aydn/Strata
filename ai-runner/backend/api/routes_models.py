@@ -8,7 +8,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 import json
 import logging
 
@@ -20,11 +20,22 @@ from ..core.memory_manager import (
     estimate_total_layers,
 )
 from ..core.inference_engine import engine, InferenceParams, EngineConfig
+from ..core.extreme_model import (
+    analyze_feasibility,
+    hardware_fingerprint,
+    model_path_fingerprint,
+    specification_from_gguf,
+)
+from ..core.runtime_capabilities import (
+    detect_runtime_capabilities,
+    validate_backend_preference,
+)
 from ..models.model_manager import model_manager, DownloadProgress
 from ..db import session_store
 from .auth import require_api_access
 
 logger = logging.getLogger(__name__)
+KV_CACHE_MEMORY_RANK = {"q4_0": 0, "q5_0": 1, "q5_1": 1, "q8_0": 2, "f16": 3}
 router = APIRouter(
     prefix="/api/models",
     tags=["models"],
@@ -84,6 +95,11 @@ class LoadRequest(BaseModel):
     cache_context_shift: bool = True
     selected_gpu_index: int = Field(default=0, ge=0, le=128)
     tensor_split: Optional[List[float]] = Field(default=None, max_length=128)
+    context_compaction_mode: Optional[Literal["drop_oldest", "extractive_summary"]] = None
+    extreme_preset: Optional[Literal["safe", "balanced", "performance", "maximum_capacity"]] = None
+    adaptive_load: Optional[bool] = None
+    adaptive_max_attempts: Optional[int] = Field(default=None, ge=1, le=12)
+    backend_preference: Optional[Literal["auto", "cuda", "vulkan", "metal", "sycl", "cpu"]] = None
 
     @field_validator("tensor_split")
     @classmethod
@@ -266,7 +282,10 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
     Returns layer distribution and performance estimates.
     """
     try:
-        hardware = get_hardware_profile(selected_gpu=request.selected_gpu_index)
+        hardware = get_hardware_profile(
+            model_dir=model_manager.model_dir,
+            selected_gpu=request.selected_gpu_index,
+        )
         _validate_gpu_selection(hardware, request.selected_gpu_index)
 
         # Try to find model in local or search results
@@ -312,6 +331,7 @@ async def load_model(model_id: str, request: LoadRequest):
     All performance optimizations (KV cache, Flash Attention, mlock,
     speculative decoding, context shifting) are forwarded via EngineConfig.
     """
+    adaptive_attempted = False
     try:
         # Find the local model
         local_models = model_manager.get_local_models()
@@ -339,28 +359,106 @@ async def load_model(model_id: str, request: LoadRequest):
         flash_attn = _as_bool(await effective("flash_attn", "flash_attn"))
         cache_context_shift = _as_bool(await effective("cache_context_shift", "cache_context_shift"))
         auto_context_prune = _as_bool(await session_store.get_setting("auto_context_prune", True))
+        context_compaction_mode = request.context_compaction_mode or str(
+            await session_store.get_setting("context_compaction_mode", "extractive_summary")
+        )
         speculative_decoding = _as_bool(await effective("speculative_decoding", "speculative_decoding"))
         draft_num_pred_tokens = int(await effective("draft_num_pred_tokens", "draft_num_pred_tokens"))
         selected_gpu_index = int(await effective("selected_gpu_index", "selected_gpu_index"))
         tensor_split = await effective("tensor_split", "tensor_split")
+        extreme_mode_enabled = _as_bool(await session_store.get_setting("extreme_mode_enabled", True))
+        extreme_preset = request.extreme_preset or str(
+            await session_store.get_setting("extreme_preset", "maximum_capacity")
+        )
+        adaptive_load = request.adaptive_load
+        if adaptive_load is None:
+            adaptive_load = _as_bool(await session_store.get_setting("adaptive_load", True))
+        adaptive_max_attempts = request.adaptive_max_attempts or int(
+            await session_store.get_setting("adaptive_max_attempts", 6)
+        )
+        backend_preference = request.backend_preference or str(
+            await session_store.get_setting("backend_preference", "auto")
+        )
 
-        hardware = get_hardware_profile(selected_gpu=selected_gpu_index)
+        hardware = get_hardware_profile(
+            model_dir=model_manager.model_dir,
+            selected_gpu=selected_gpu_index,
+        )
         _validate_gpu_selection(hardware, selected_gpu_index, tensor_split)
+        capabilities = detect_runtime_capabilities(hardware)
+        validate_backend_preference(backend_preference, capabilities)
+        effective_capabilities = capabilities
+        if backend_preference == "cpu":
+            # A CUDA/Vulkan-enabled native build can still run CPU-only when
+            # no layers are offloaded.  Plan and fingerprint that mode as CPU
+            # so the report and persisted profile match the actual load.
+            effective_capabilities = capabilities.model_copy(update={
+                "active_backend": "cpu",
+                "gpu_offload_supported": False,
+            })
 
         # Calculate offload plan if no manual override
         n_gpu_layers = request.n_gpu_layers
+        feasibility = None
         if n_gpu_layers is None:
-            file_size_mb = model.file_size_bytes / (1024 * 1024)
-            total_layers = estimate_total_layers(model.parameter_count or 7_000_000_000)
-            plan = calculate_offload_plan(
-                model_id=model_id,
-                quant=request.quant,
-                file_size_mb=file_size_mb,
-                total_layers=total_layers,
-                hardware=hardware,
-                context_length=context_length,
-            )
-            n_gpu_layers = plan.gpu_layers
+            if extreme_mode_enabled:
+                spec, _ = specification_from_gguf(
+                    model_id,
+                    model.local_path,
+                    model.downloaded_quant or request.quant,
+                    model.parameter_count,
+                )
+                feasibility = analyze_feasibility(
+                    spec,
+                    hardware,
+                    effective_capabilities,
+                    preset_name=extreme_preset,
+                    requested_context_length=context_length,
+                    selected_gpu_index=selected_gpu_index,
+                    tensor_split=tensor_split,
+                    force_cpu=backend_preference == "cpu",
+                )
+                if feasibility.status == "blocked":
+                    raise HTTPException(status_code=422, detail={
+                        "message": "Model için güvenli çalışma planı oluşturulamadı.",
+                        "blockers": feasibility.blockers,
+                        "report": feasibility.model_dump(),
+                    })
+                n_gpu_layers = feasibility.runtime.n_gpu_layers
+                # Automatic Extreme planning is a safety boundary. Explicit
+                # values lower than the recommendation remain valid, while
+                # memory-heavier values are capped. Users who need unrestricted
+                # manual tuning can provide n_gpu_layers or disable Extreme Mode.
+                context_length = min(context_length, feasibility.runtime.context_length)
+                n_batch = min(n_batch, feasibility.runtime.n_batch)
+                use_mmap = use_mmap or feasibility.runtime.use_mmap
+                use_mlock = use_mlock and feasibility.runtime.use_mlock
+                recommended_kv = feasibility.runtime.kv_cache_type
+                if (
+                    KV_CACHE_MEMORY_RANK.get(recommended_kv, 99)
+                    < KV_CACHE_MEMORY_RANK.get(kv_cache_type, 99)
+                ):
+                    kv_cache_type = recommended_kv
+                flash_attn = flash_attn and feasibility.runtime.flash_attn
+                if tensor_split is None:
+                    tensor_split = feasibility.runtime.tensor_split
+            else:
+                file_size_mb = model.file_size_bytes / (1024 * 1024)
+                total_layers = estimate_total_layers(model.parameter_count or 7_000_000_000)
+                plan = calculate_offload_plan(
+                    model_id=model_id,
+                    quant=request.quant,
+                    file_size_mb=file_size_mb,
+                    total_layers=total_layers,
+                    hardware=hardware,
+                    context_length=context_length,
+                )
+                n_gpu_layers = plan.gpu_layers
+
+        if backend_preference == "cpu":
+            n_gpu_layers = 0
+            flash_attn = False
+            tensor_split = None
 
         # Build EngineConfig with all optimizations
         config = EngineConfig(
@@ -380,29 +478,69 @@ async def load_model(model_id: str, request: LoadRequest):
             draft_num_pred_tokens=draft_num_pred_tokens,
             main_gpu=selected_gpu_index,
             tensor_split=tensor_split,
+            backend_preference=backend_preference,
+            context_compaction_mode=context_compaction_mode,
         )
 
-        # Load the model with full optimization config
-        info = await asyncio.to_thread(
-            engine.load_model,
-            model_id,
-            model.local_path,
-            config,
-        )
+        # Load with bounded OOM recovery when enabled. Adaptation happens
+        # between complete llama.cpp context loads, never during generation.
+        if adaptive_load:
+            adaptive_attempted = True
+            info, load_report = await asyncio.to_thread(
+                engine.load_model_adaptive,
+                model_id,
+                model.local_path,
+                config,
+                max_attempts=adaptive_max_attempts,
+            )
+        else:
+            info = await asyncio.to_thread(
+                engine.load_model,
+                model_id,
+                model.local_path,
+                config,
+            )
+            load_report = None
 
         model_manager.update_last_used(model_id)
+
+        final_config = engine.config or config
+        path_hash = model_path_fingerprint(model.local_path)
+        effective_backend = effective_capabilities.active_backend
+        hw_fingerprint = hardware_fingerprint(hardware, effective_backend)
+        profile = await session_store.save_runtime_profile(
+            model_id=model_id,
+            model_path_hash=path_hash,
+            hardware_fingerprint=hw_fingerprint,
+            backend=effective_backend,
+            preset=extreme_preset,
+            config=final_config.model_dump(),
+            load_report=load_report.model_dump() if load_report else {
+                "succeeded": True,
+                "attempts": [],
+                "final_config": final_config.model_dump(),
+                "recovered_from_oom": False,
+            },
+        )
 
         return {
             "status": "loaded",
             "model": info.model_dump(),
             "optimizations": engine.get_optimization_summary(),
+            "load_report": load_report.model_dump() if load_report else None,
+            "feasibility": feasibility.model_dump() if feasibility else None,
+            "runtime_profile": profile,
         }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Load error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        failure_report = engine.last_load_report if adaptive_attempted else None
+        raise HTTPException(status_code=500, detail={
+            "message": str(e),
+            "load_report": failure_report.model_dump() if failure_report else None,
+        }) from e
 
 
 @router.get("/optimizations")

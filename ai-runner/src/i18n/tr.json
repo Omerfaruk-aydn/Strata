@@ -37,7 +37,7 @@
     "offload_plan": "Yükleme Planı",
     "gpu_layers": "GPU Katmanları",
     "ram_layers": "RAM Katmanları",
-    "disk_layers": "Disk Katmanları",
+    "disk_layers": "Mmap Bellek Baskısı",
     "estimated_speed": "Tahmini Hız",
     "recommendation": "Öneri",
     "apply_plan": "Uygula",

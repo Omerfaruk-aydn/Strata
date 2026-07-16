@@ -21,6 +21,9 @@ const useModelStore = create((set, get) => ({
   downloadProgress: {},  // { [modelId]: { progress, status, speed, eta } }
   loadingModelId: null,
   error: null,
+  loadReport: null,
+  feasibility: null,
+  runtimeProfile: null,
 
   // ── Actions ──
 
@@ -160,6 +163,11 @@ const useModelStore = create((set, get) => ({
           draft_num_pred_tokens: options.draftNumPredTokens ?? 10,
           selected_gpu_index:  options.selectedGpuIndex     ?? 0,
           tensor_split:        options.tensorSplit          || null,
+          context_compaction_mode: options.contextCompactionMode || 'extractive_summary',
+          extreme_preset:      options.extremePreset         || 'maximum_capacity',
+          adaptive_load:       options.adaptiveLoad          ?? true,
+          adaptive_max_attempts: options.adaptiveMaxAttempts || 6,
+          backend_preference:  options.backendPreference     || 'auto',
         }),
       });
 
@@ -168,10 +176,17 @@ const useModelStore = create((set, get) => ({
         activeModel:    data.model,
         optimizations:  data.optimizations || {},
         loadingModelId: null,
+        loadReport:     data.load_report || null,
+        feasibility:    data.feasibility || null,
+        runtimeProfile: data.runtime_profile || null,
       });
       return data.model;
     } catch (err) {
-      set({ error: err.message, loadingModelId: null });
+      set({
+        error: err.message,
+        loadingModelId: null,
+        loadReport: err.data?.detail?.load_report || null,
+      });
       throw err;
     }
   },
@@ -181,7 +196,7 @@ const useModelStore = create((set, get) => ({
   unloadModel: async () => {
     try {
       await apiFetch('/api/models/unload', { method: 'POST' });
-      set({ activeModel: null });
+      set({ activeModel: null, loadReport: null, feasibility: null, runtimeProfile: null });
     } catch (err) {
       set({ error: err.message });
     }

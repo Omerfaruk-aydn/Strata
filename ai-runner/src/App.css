@@ -158,6 +158,17 @@
   color: var(--accent-active);
 }
 
+.header-extreme-button {
+  border: 1px solid rgba(255, 180, 84, 0.22);
+  color: var(--accent-active);
+  background: var(--accent-active-dim);
+}
+
+.header-extreme-button:hover:not(:disabled) {
+  border-color: rgba(255, 180, 84, 0.42);
+  color: var(--accent-active);
+}
+
 /* ── Main Content ── */
 .app-content {
   flex: 1;

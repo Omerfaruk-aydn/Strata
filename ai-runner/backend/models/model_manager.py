@@ -15,6 +15,8 @@ from typing import Optional, List, Dict, Any, Callable
 from pydantic import BaseModel, Field
 import logging
 
+from ..core.model_loader import GGUFMetadata, validate_gguf_file
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,6 +37,9 @@ class ModelMetadata(BaseModel):
     downloads: int = 0
     author: str = ""
     description: str = ""
+    architecture: str = ""
+    total_layers: int = 0
+    metadata_valid: bool = False
 
 
 class DownloadProgress(BaseModel):
@@ -189,8 +194,18 @@ class ModelManager:
         part_path = f"{local_path}.part"
 
         if os.path.exists(local_path):
-            if not self._is_valid_gguf(local_path):
-                raise RuntimeError("Mevcut model dosyası geçerli bir GGUF dosyası değil.")
+            validation = await asyncio.to_thread(validate_gguf_file, local_path)
+            if not validation.is_valid:
+                raise RuntimeError(
+                    f"Mevcut model dosyası geçerli bir GGUF değil: {validation.error or 'yapısal hata'}"
+                )
+            if not self._load_model_cache(filename):
+                self._save_model_cache(
+                    model_id,
+                    quant,
+                    local_path,
+                    gguf_metadata=validation,
+                )
             if progress_callback:
                 progress_callback(DownloadProgress(
                     model_id=model_id,
@@ -225,8 +240,11 @@ class ModelManager:
             if not result:
                 return ""
 
-            if not self._is_valid_gguf(part_path):
-                raise RuntimeError("İndirilen dosyanın GGUF başlığı geçersiz.")
+            validation = await asyncio.to_thread(validate_gguf_file, part_path)
+            if not validation.is_valid:
+                raise RuntimeError(
+                    f"İndirilen GGUF yapısal doğrulamadan geçemedi: {validation.error or 'bilinmeyen hata'}"
+                )
 
             os.replace(part_path, local_path)
             checksum = await asyncio.to_thread(self._sha256, local_path)
@@ -236,6 +254,7 @@ class ModelManager:
                 local_path,
                 checksum=checksum,
                 remote_filename=remote_filename,
+                gguf_metadata=validation,
             )
 
             if progress_callback:
@@ -388,29 +407,58 @@ class ModelManager:
                 continue
 
             filepath = os.path.join(self.model_dir, filename)
-            if not self._is_valid_gguf(filepath):
-                logger.warning("Ignoring invalid GGUF file: %s", filepath)
-                continue
-            file_size = os.path.getsize(filepath)
+            stat = os.stat(filepath)
+            file_size = stat.st_size
 
             # Check cache for metadata
             cached = cache.get(filename, {})
+            metadata_cached = (
+                cached.get("metadata_parser_version") == 2
+                and cached.get("metadata_mtime_ns") == stat.st_mtime_ns
+                and cached.get("metadata_file_size") == file_size
+                and cached.get("metadata_valid") is True
+            )
+            if metadata_cached:
+                if not self._has_gguf_magic(filepath):
+                    logger.warning("Ignoring invalid GGUF file: %s", filepath)
+                    continue
+                gguf = None
+            else:
+                gguf = validate_gguf_file(filepath)
+                if not gguf.is_valid:
+                    logger.warning("Ignoring invalid GGUF file %s: %s", filepath, gguf.error)
+                    continue
+                cached.update({
+                    "metadata_valid": True,
+                    "metadata_parser_version": 2,
+                    "metadata_mtime_ns": stat.st_mtime_ns,
+                    "metadata_file_size": file_size,
+                    "parameter_count": gguf.parameter_count or cached.get("parameter_count", 0),
+                    "context_length": gguf.context_length,
+                    "architecture": gguf.architecture,
+                    "total_layers": gguf.block_count,
+                })
+                self._save_cache_file(filename, cached)
 
             model_id = cached.get("model_id", filename.replace(".gguf", ""))
-            quant = cached.get("quant", "Q4_K_M")
+            quant = cached.get("quant") or self._extract_quant_from_filename(filename) or "Q4_K_M"
             display_name = cached.get("display_name", filename.replace(".gguf", ""))
+            parameter_count = int(cached.get("parameter_count", 0) or (gguf.parameter_count if gguf else 0) or 0)
 
             models.append(ModelMetadata(
                 id=model_id,
                 display_name=display_name,
-                parameter_count=cached.get("parameter_count", 0),
+                parameter_count=parameter_count,
                 available_quants=[quant],
                 downloaded_quant=quant,
                 file_size_bytes=file_size,
                 local_path=filepath,
                 last_used=cached.get("last_used"),
                 license=cached.get("license", ""),
-                context_length=cached.get("context_length", 4096),
+                context_length=int(cached.get("context_length", 0) or (gguf.context_length if gguf else 0) or 4096),
+                architecture=str(cached.get("architecture", "") or (gguf.architecture if gguf else "")),
+                total_layers=int(cached.get("total_layers", 0) or (gguf.block_count if gguf else 0)),
+                metadata_valid=bool(cached.get("metadata_valid") or (gguf.is_valid if gguf else False)),
             ))
 
         return models
@@ -454,6 +502,36 @@ class ModelManager:
                 self._save_cache_file(filename, cached)
                 break
 
+    def register_local_model(
+        self,
+        model_id: str,
+        quant: str,
+        local_path: str,
+        *,
+        source: str = "local",
+        compute_checksum: bool = False,
+    ) -> None:
+        """Register a validated local/quantized GGUF in the offline cache."""
+        resolved = os.path.abspath(local_path)
+        model_root = os.path.abspath(self.model_dir)
+        if os.path.commonpath([resolved, model_root]) != model_root:
+            raise ValueError("Model dosyası yapılandırılmış model klasöründe olmalıdır.")
+        validation = validate_gguf_file(resolved)
+        if not validation.is_valid:
+            raise ValueError(f"Geçerli bir GGUF dosyası gerekli: {validation.error or 'yapısal hata'}")
+        checksum = self._sha256(resolved) if compute_checksum else None
+        self._save_model_cache(
+            model_id,
+            quant.upper(),
+            resolved,
+            checksum=checksum,
+            gguf_metadata=validation,
+        )
+        filename = os.path.basename(resolved)
+        cached = self._load_model_cache(filename)
+        cached["source"] = source
+        self._save_cache_file(filename, cached)
+
     def get_compatibility_badge(
         self,
         model: ModelMetadata,
@@ -494,6 +572,7 @@ class ModelManager:
         local_path: str,
         checksum: Optional[str] = None,
         remote_filename: Optional[str] = None,
+        gguf_metadata: Optional[GGUFMetadata] = None,
     ) -> None:
         """Save model metadata to cache for offline access."""
         filename = os.path.basename(local_path)
@@ -507,6 +586,19 @@ class ModelManager:
             "remote_filename": remote_filename,
             "downloaded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
+        gguf = gguf_metadata or validate_gguf_file(local_path)
+        if gguf.is_valid:
+            stat = os.stat(local_path)
+            cache_data.update({
+                "parameter_count": gguf.parameter_count or cache_data["parameter_count"],
+                "context_length": gguf.context_length,
+                "architecture": gguf.architecture,
+                "total_layers": gguf.block_count,
+                "metadata_valid": True,
+                "metadata_parser_version": 2,
+                "metadata_mtime_ns": stat.st_mtime_ns,
+                "metadata_file_size": stat.st_size,
+            })
         self._save_cache_file(filename, cache_data)
 
     def _save_cache_file(self, filename: str, data: dict) -> None:
@@ -547,6 +639,10 @@ class ModelManager:
 
     @staticmethod
     def _is_valid_gguf(filepath: str) -> bool:
+        return validate_gguf_file(filepath).is_valid
+
+    @staticmethod
+    def _has_gguf_magic(filepath: str) -> bool:
         try:
             with open(filepath, "rb") as model_file:
                 return model_file.read(4) == b"GGUF"
@@ -609,8 +705,9 @@ class ModelManager:
     def _extract_quants_from_files(self, filenames: List[str]) -> List[str]:
         """Extract quantization levels from actual GGUF repository filenames."""
         known_quants = [
-            "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ3_XS",
-            "Q2_K", "Q3_K_M", "Q4_0", "Q4_K_M", "Q5_0", "Q5_K_M",
+            "IQ1_S", "IQ2_XXS", "IQ2_XS", "IQ3_XS", "IQ3_S", "IQ4_XS", "IQ4_NL",
+            "Q2_K", "Q3_K_S", "Q3_K_M", "Q3_K_L", "Q4_0", "Q4_K_S", "Q4_K_M",
+            "Q5_0", "Q5_K_S", "Q5_K_M",
             "Q6_K", "Q8_0", "F16", "BF16",
         ]
         found = set()
@@ -623,6 +720,10 @@ class ModelManager:
                 if re.search(rf"(?:^|_){re.escape(key)}(?:_|$)", normalized):
                     found.add(quant)
         return [quant for quant in known_quants if quant in found]
+
+    def _extract_quant_from_filename(self, filename: str) -> Optional[str]:
+        quants = self._extract_quants_from_files([filename])
+        return quants[0] if quants else None
 
 # Singleton instance
 model_manager = ModelManager()

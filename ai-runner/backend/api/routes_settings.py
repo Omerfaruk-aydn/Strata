@@ -52,8 +52,14 @@ class SettingsValues(BaseModel):
     max_context_length: Optional[int] = Field(default=None, ge=512, le=1_048_576)
     max_history_messages: Optional[int] = Field(default=None, ge=0, le=100_000)
     auto_context_prune: Optional[bool] = None
+    context_compaction_mode: Optional[Literal["drop_oldest", "extractive_summary"]] = None
     selected_gpu_index: Optional[int] = Field(default=None, ge=0, le=128)
     tensor_split: Optional[list[float]] = Field(default=None, max_length=128)
+    extreme_mode_enabled: Optional[bool] = None
+    extreme_preset: Optional[Literal["safe", "balanced", "performance", "maximum_capacity"]] = None
+    adaptive_load: Optional[bool] = None
+    adaptive_max_attempts: Optional[int] = Field(default=None, ge=1, le=12)
+    backend_preference: Optional[Literal["auto", "cuda", "vulkan", "metal", "sycl", "cpu"]] = None
 
     @field_validator("api_host")
     @classmethod

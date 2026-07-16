@@ -14,6 +14,7 @@ Performance Optimizations:
 
 import asyncio
 import gc
+import math
 import time
 import threading
 from typing import Optional, AsyncGenerator, Dict, Any, Callable, List
@@ -84,6 +85,11 @@ class EngineConfig(BaseModel):
 
     # Conversation pruning is independent from the low-level KV shift option.
     auto_context_prune: bool = True
+    context_compaction_mode: str = "extractive_summary"
+
+    # Backend selection reflects the native llama.cpp build. ``cpu`` forces
+    # zero GPU layers; other explicit values are validated before loading.
+    backend_preference: str = "auto"
 
     @field_validator("kv_cache_type")
     @classmethod
@@ -93,6 +99,23 @@ class EngineConfig(BaseModel):
                 f"kv_cache_type must be one of {list(KV_CACHE_TYPE_MAP.keys())}, got '{v}'"
             )
         return v
+
+    @field_validator("context_compaction_mode")
+    @classmethod
+    def validate_compaction_mode(cls, value: str) -> str:
+        allowed = {"drop_oldest", "extractive_summary"}
+        if value not in allowed:
+            raise ValueError(f"context_compaction_mode must be one of {sorted(allowed)}")
+        return value
+
+    @field_validator("backend_preference")
+    @classmethod
+    def validate_backend_name(cls, value: str) -> str:
+        normalized = value.lower()
+        allowed = {"auto", "cuda", "vulkan", "metal", "sycl", "cpu"}
+        if normalized not in allowed:
+            raise ValueError(f"backend_preference must be one of {sorted(allowed)}")
+        return normalized
 
 
 class InferenceParams(BaseModel):
@@ -146,6 +169,25 @@ class ModelInfo(BaseModel):
     main_gpu: int = 0
 
 
+class LoadAttempt(BaseModel):
+    attempt: int
+    n_gpu_layers: int
+    context_length: int
+    n_batch: int
+    use_mlock: bool
+    outcome: str
+    error_type: Optional[str] = None
+    error: Optional[str] = None
+    elapsed_ms: float = 0.0
+
+
+class AdaptiveLoadReport(BaseModel):
+    succeeded: bool
+    attempts: List[LoadAttempt] = Field(default_factory=list)
+    final_config: Optional[EngineConfig] = None
+    recovered_from_oom: bool = False
+
+
 def _get_physical_cores() -> int:
     """
     Return the number of PHYSICAL CPU cores only.
@@ -181,6 +223,7 @@ class InferenceEngine:
         self._lock = threading.Lock()
         self._load_progress_callback: Optional[Callable] = None
         self._config: Optional[EngineConfig] = None
+        self._last_load_report: Optional[AdaptiveLoadReport] = None
         # Context shift: track messages already evaluated (KV cache state)
         self._evaluated_message_count: int = 0
 
@@ -199,6 +242,10 @@ class InferenceEngine:
     @property
     def config(self) -> Optional[EngineConfig]:
         return self._config
+
+    @property
+    def last_load_report(self) -> Optional[AdaptiveLoadReport]:
+        return self._last_load_report
 
     def load_model(
         self,
@@ -320,10 +367,21 @@ class InferenceEngine:
                 # ── Extract total layers from GGUF metadata ─────────────────
                 total_layers = 0
                 try:
-                    metadata = self._model.metadata
-                    if "llama.block_count" in metadata:
-                        total_layers = int(metadata["llama.block_count"])
+                    metadata = self._model.metadata or {}
+                    architecture = metadata.get("general.architecture", "")
+                    if isinstance(architecture, bytes):
+                        architecture = architecture.decode("utf-8", errors="replace")
+                    candidate_keys = []
+                    if architecture:
+                        candidate_keys.append(f"{architecture}.block_count")
+                    candidate_keys.append("llama.block_count")
+                    for key in candidate_keys:
+                        if key in metadata:
+                            total_layers = int(metadata[key])
+                            break
                 except Exception:
+                    total_layers = 0
+                if total_layers <= 0:
                     total_layers = max(0, config.n_gpu_layers)
 
                 self._model_info = ModelInfo(
@@ -368,7 +426,142 @@ class InferenceEngine:
                 self._model = None
                 self._model_info = None
                 self._config = None
+                gc.collect()
                 raise RuntimeError(f"Model yüklenemedi: {str(e)}")
+
+    @staticmethod
+    def classify_load_error(error: Exception | str) -> str:
+        """Classify native loader failures so only safe retries are attempted."""
+        message = str(error).lower()
+        if any(token in message for token in (
+            "cuda out of memory", "cublas_status_alloc_failed", "cuda error 2",
+            "failed to allocate cuda", "cuda_malloc", "vulkan out of device memory",
+            "device memory allocation", "gpu memory", "vram",
+        )):
+            return "gpu_oom"
+        if any(token in message for token in (
+            "paging file is too small", "pagefile", "cannot allocate memory",
+            "not enough memory", "std::bad_alloc", "bad allocation",
+            "commitment limit", "memoryerror", "failed to map",
+        )):
+            return "host_oom"
+        if any(token in message for token in (
+            "kv cache", "context size", "n_ctx", "compute buffer",
+        )) and any(token in message for token in ("alloc", "memory", "failed")):
+            return "context_oom"
+        if any(token in message for token in (
+            "invalid magic", "invalid gguf", "unsupported model", "unknown model architecture",
+            "no such file", "does not exist", "permission denied",
+        )):
+            return "model_error"
+        if "llama-cpp-python" in message or "no module named 'llama_cpp'" in message:
+            return "runtime_missing"
+        return "unknown"
+
+    def load_model_adaptive(
+        self,
+        model_id: str,
+        model_path: str,
+        config: EngineConfig,
+        *,
+        max_attempts: int = 6,
+        min_gpu_layers: int = 0,
+        progress_callback: Optional[Callable[[float, str], None]] = None,
+    ) -> tuple[ModelInfo, AdaptiveLoadReport]:
+        """Load with bounded OOM recovery and an auditable attempt history.
+
+        llama.cpp cannot move transformer layers while a generation is in
+        progress.  Safe adaptation therefore happens between complete load
+        attempts: the failed native context is released, the memory profile is
+        reduced, and a fresh context is created.
+        """
+        current = config.model_copy(deep=True)
+        attempts: List[LoadAttempt] = []
+        recovered = False
+        max_attempts = max(1, min(int(max_attempts), 12))
+        self._last_load_report = None
+
+        for attempt_number in range(1, max_attempts + 1):
+            started = time.perf_counter()
+            if progress_callback:
+                progress_callback(
+                    (attempt_number - 1) / max_attempts,
+                    f"Uyarlanabilir yükleme denemesi {attempt_number}/{max_attempts}",
+                )
+            try:
+                if progress_callback is None:
+                    info = self.load_model(model_id, model_path, current)
+                else:
+                    info = self.load_model(
+                        model_id,
+                        model_path,
+                        current,
+                        progress_callback=progress_callback,
+                    )
+                attempts.append(LoadAttempt(
+                    attempt=attempt_number,
+                    n_gpu_layers=current.n_gpu_layers,
+                    context_length=current.context_length,
+                    n_batch=current.n_batch,
+                    use_mlock=current.use_mlock,
+                    outcome="loaded",
+                    elapsed_ms=round((time.perf_counter() - started) * 1000, 1),
+                ))
+                report = AdaptiveLoadReport(
+                    succeeded=True,
+                    attempts=attempts,
+                    final_config=current,
+                    recovered_from_oom=recovered,
+                )
+                self._last_load_report = report
+                return info, report
+            except Exception as exc:
+                error_type = self.classify_load_error(exc)
+                attempts.append(LoadAttempt(
+                    attempt=attempt_number,
+                    n_gpu_layers=current.n_gpu_layers,
+                    context_length=current.context_length,
+                    n_batch=current.n_batch,
+                    use_mlock=current.use_mlock,
+                    outcome="failed",
+                    error_type=error_type,
+                    error=str(exc)[:1000],
+                    elapsed_ms=round((time.perf_counter() - started) * 1000, 1),
+                ))
+                retryable = error_type in {"gpu_oom", "host_oom", "context_oom"}
+                if not retryable or attempt_number >= max_attempts:
+                    report = AdaptiveLoadReport(
+                        succeeded=False,
+                        attempts=attempts,
+                        final_config=None,
+                        recovered_from_oom=recovered,
+                    )
+                    self._last_load_report = report
+                    raise RuntimeError(str(exc)) from exc
+
+                recovered = True
+                if current.use_mlock:
+                    current.use_mlock = False
+                elif error_type == "gpu_oom" and current.n_gpu_layers > min_gpu_layers:
+                    reduction = max(1, math.ceil(current.n_gpu_layers * 0.18))
+                    current.n_gpu_layers = max(min_gpu_layers, current.n_gpu_layers - reduction)
+                elif current.n_batch > 32:
+                    current.n_batch = max(32, current.n_batch // 2)
+                elif current.context_length > 512:
+                    current.context_length = max(512, current.context_length // 2)
+                elif current.n_gpu_layers > min_gpu_layers:
+                    current.n_gpu_layers = max(min_gpu_layers, current.n_gpu_layers - 1)
+                else:
+                    report = AdaptiveLoadReport(
+                        succeeded=False,
+                        attempts=attempts,
+                        final_config=None,
+                        recovered_from_oom=recovered,
+                    )
+                    self._last_load_report = report
+                    raise RuntimeError(str(exc)) from exc
+
+                gc.collect()
 
     def unload_model(self) -> None:
         """FR-307: Safely unload the current model from memory."""
@@ -447,14 +640,42 @@ class InferenceEngine:
 
         # Trim complete oldest turns from the front until we're under budget.
         remaining = dialogue[:-2] if len(dialogue) >= 2 else []
+        original_remaining = list(remaining)
+        summary_reserve = 0
+        if self._config.context_compaction_mode == "extractive_summary" and remaining:
+            summary_reserve = min(384, max(64, int(max_tokens_estimate * 0.20)))
+        dialogue_budget = max(64, max_tokens_estimate - summary_reserve)
         while remaining:
             check = system_msgs + remaining + tail
-            if self.count_prompt_tokens(check) <= max_tokens_estimate:
+            if self.count_prompt_tokens(check) <= dialogue_budget:
                 break
             drop_count = 2 if len(remaining) >= 2 and remaining[0].get("role") == "user" else 1
             remaining = remaining[drop_count:]
 
-        trimmed = system_msgs + remaining + tail
+        dropped_messages = original_remaining[:len(original_remaining) - len(remaining)]
+        summary_text = ""
+        if dropped_messages and self._config.context_compaction_mode == "extractive_summary":
+            compacted = self._compact_messages(dropped_messages)
+            if compacted:
+                summary_text = "Önceki konuşmanın sıkıştırılmış özeti:\n" + compacted
+
+        def build_trimmed(active_summary: str) -> List[Dict[str, str]]:
+            prefix = [dict(message) for message in system_msgs]
+            if active_summary:
+                if prefix:
+                    original = str(prefix[-1].get("content", ""))
+                    prefix[-1]["content"] = f"{original}\n\n{active_summary}".strip()
+                else:
+                    prefix.append({"role": "system", "content": active_summary})
+            return prefix + remaining + tail
+
+        trimmed = build_trimmed(summary_text)
+        while summary_text and self.count_prompt_tokens(trimmed) > max_tokens_estimate:
+            if len(summary_text) <= 240:
+                summary_text = ""
+            else:
+                summary_text = summary_text[:max(200, len(summary_text) // 2)]
+            trimmed = build_trimmed(summary_text)
         dropped = len(dialogue) - len(remaining) - len(tail)
         if dropped > 0:
             logger.debug(
@@ -467,6 +688,27 @@ class InferenceEngine:
                 "daha kısa bir prompt ya da daha büyük context_length kullanın."
             )
         return trimmed
+
+    @staticmethod
+    def _compact_messages(messages: List[Dict[str, str]], max_chars: int = 1600) -> str:
+        """Create a bounded, deterministic summary without a recursive model call."""
+        parts: List[str] = []
+        remaining = max_chars
+        for message in messages:
+            if remaining <= 40:
+                break
+            role = "Kullanıcı" if message.get("role") == "user" else "Asistan"
+            content = " ".join(str(message.get("content", "")).split())
+            if not content:
+                continue
+            allowance = min(220, remaining - len(role) - 3)
+            if allowance <= 0:
+                break
+            excerpt = content if len(content) <= allowance else content[:max(1, allowance - 1)].rstrip() + "…"
+            part = f"{role}: {excerpt}"
+            parts.append(part)
+            remaining -= len(part) + 1
+        return "\n".join(parts)
 
     async def generate_streaming(
         self,
@@ -724,6 +966,8 @@ class InferenceEngine:
             "tensor_split":        self._config.tensor_split,
             "main_gpu":            self._config.main_gpu,
             "auto_context_prune":  self._config.auto_context_prune,
+            "context_compaction_mode": self._config.context_compaction_mode,
+            "backend_preference": self._config.backend_preference,
         }
 
 

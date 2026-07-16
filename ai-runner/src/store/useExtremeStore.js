@@ -1,0 +1,181 @@
+import { create } from 'zustand';
+import { apiFetch } from '../api/client';
+
+const useExtremeStore = create((set, get) => ({
+  capabilities: null,
+  presets: [],
+  report: null,
+  metadata: null,
+  profiles: [],
+  benchmark: null,
+  quantization: { available: false, supported_quants: [], jobs: [] },
+  isLoading: false,
+  isBenchmarking: false,
+  isQuantizing: false,
+  error: null,
+
+  fetchCapabilities: async (refresh = false) => {
+    try {
+      const res = await apiFetch(`/api/extreme/capabilities${refresh ? '?refresh=true' : ''}`);
+      const data = await res.json();
+      set({ capabilities: data });
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
+  fetchPresets: async () => {
+    try {
+      const res = await apiFetch('/api/extreme/presets');
+      const data = await res.json();
+      set({ presets: data.presets || [] });
+    } catch (error) {
+      set({ error: error.message });
+    }
+  },
+
+  analyzeLocal: async (modelId, options = {}) => {
+    set({ isLoading: true, error: null, benchmark: null });
+    try {
+      const res = await apiFetch(`/api/extreme/analyze/${encodeURIComponent(modelId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quant: options.quant || null,
+          preset: options.preset || 'maximum_capacity',
+          context_length: options.contextLength || 2048,
+          selected_gpu_index: options.selectedGpuIndex ?? 0,
+          tensor_split: options.tensorSplit || null,
+        }),
+      });
+      const data = await res.json();
+      set({ report: data.report, metadata: data.metadata || null, isLoading: false });
+      return data.report;
+    } catch (error) {
+      set({ error: error.message, report: null, isLoading: false });
+      return null;
+    }
+  },
+
+  simulate: async (options) => {
+    set({ isLoading: true, error: null, benchmark: null });
+    try {
+      const res = await apiFetch('/api/extreme/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id: options.modelId || `simulation-${options.parameterB}B`,
+          parameter_count: Math.round(Number(options.parameterB) * 1_000_000_000),
+          quant: options.quant || 'Q4_K_M',
+          preset: options.preset || 'maximum_capacity',
+          context_length: options.contextLength || 2048,
+          native_context_length: options.nativeContextLength || 4096,
+          selected_gpu_index: options.selectedGpuIndex ?? 0,
+        }),
+      });
+      const data = await res.json();
+      set({ report: data.report, metadata: null, isLoading: false });
+      return data.report;
+    } catch (error) {
+      set({ error: error.message, report: null, isLoading: false });
+      return null;
+    }
+  },
+
+  runBenchmark: async (maxTokens = 32) => {
+    set({ isBenchmarking: true, error: null });
+    try {
+      const res = await apiFetch('/api/extreme/benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_tokens: maxTokens }),
+      });
+      const data = await res.json();
+      set({ benchmark: data.benchmark, isBenchmarking: false });
+      await get().fetchProfiles();
+      return data.benchmark;
+    } catch (error) {
+      set({ error: error.message, isBenchmarking: false });
+      return null;
+    }
+  },
+
+  rebalance: async (preset = 'maximum_capacity') => {
+    set({ isLoading: true, error: null });
+    try {
+      const res = await apiFetch('/api/extreme/rebalance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset }),
+      });
+      const data = await res.json();
+      set({ report: data.report || get().report, isLoading: false });
+      return data;
+    } catch (error) {
+      set({ error: error.message, isLoading: false });
+      return null;
+    }
+  },
+
+  fetchProfiles: async (modelId = null) => {
+    try {
+      const query = modelId ? `?model_id=${encodeURIComponent(modelId)}` : '';
+      const res = await apiFetch(`/api/extreme/profiles${query}`);
+      const data = await res.json();
+      set({ profiles: data.profiles || [] });
+    } catch (error) {
+      set({ error: error.message });
+    }
+  },
+
+  fetchQuantization: async () => {
+    try {
+      const res = await apiFetch('/api/extreme/quantization');
+      const data = await res.json();
+      set({ quantization: data });
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
+  startQuantization: async (modelId, sourceQuant, outputQuant, allowRequantize = false) => {
+    set({ isQuantizing: true, error: null });
+    try {
+      const res = await apiFetch(`/api/extreme/quantization/start/${encodeURIComponent(modelId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quant: outputQuant,
+          source_quant: sourceQuant || null,
+          allow_requantize: allowRequantize,
+        }),
+      });
+      const data = await res.json();
+      await get().fetchQuantization();
+      set({ isQuantizing: false });
+      return data.job;
+    } catch (error) {
+      set({ error: error.message, isQuantizing: false });
+      return null;
+    }
+  },
+
+  cancelQuantization: async (jobId) => {
+    try {
+      await apiFetch(`/api/extreme/quantization/jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' });
+      await get().fetchQuantization();
+    } catch (error) {
+      set({ error: error.message });
+    }
+  },
+
+  clearError: () => set({ error: null }),
+  clearReport: () => set({ report: null, metadata: null, benchmark: null }),
+}));
+
+export default useExtremeStore;
+

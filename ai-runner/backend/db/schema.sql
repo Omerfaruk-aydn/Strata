@@ -54,8 +54,25 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS runtime_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_id TEXT NOT NULL,
+    model_path_hash TEXT NOT NULL,
+    hardware_fingerprint TEXT NOT NULL,
+    backend TEXT NOT NULL DEFAULT 'unknown',
+    preset TEXT NOT NULL DEFAULT 'maximum_capacity',
+    config_json TEXT NOT NULL DEFAULT '{}',
+    load_report_json TEXT NOT NULL DEFAULT '{}',
+    benchmark_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(model_id, model_path_hash, hardware_fingerprint)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_sessions_pinned ON chat_sessions(pinned DESC, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_prompt_category ON prompt_templates(category);
+CREATE INDEX IF NOT EXISTS idx_runtime_profiles_lookup
+    ON runtime_profiles(model_id, hardware_fingerprint, updated_at DESC);

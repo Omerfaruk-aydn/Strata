@@ -43,6 +43,12 @@ export default function SettingsModal({ isOpen, onClose }) {
         maxContextLength: settings.maxContextLength,
         maxHistoryMessages: settings.maxHistoryMessages,
         autoContextPrune: settings.autoContextPrune,
+        contextCompactionMode: settings.contextCompactionMode,
+        extremeModeEnabled: settings.extremeModeEnabled,
+        extremePreset: settings.extremePreset,
+        adaptiveLoad: settings.adaptiveLoad,
+        adaptiveMaxAttempts: settings.adaptiveMaxAttempts,
+        backendPreference: settings.backendPreference,
         allowNetworkAccess: settings.allowNetworkAccess,
       });
     }
@@ -66,6 +72,7 @@ export default function SettingsModal({ isOpen, onClose }) {
     { id: 'general',  label: t('settings.general'),  icon: '⚙️' },
     { id: 'storage',  label: t('settings.storage'),  icon: '💾' },
     { id: 'advanced', label: t('settings.advanced'), icon: '🔧' },
+    { id: 'extreme',  label: 'Extreme Model',         icon: '◆' },
     { id: 'pruning',  label: 'Bağlam Yönetimi',      icon: '✂️' },
     { id: 'api',      label: t('settings.api'),      icon: '🔌' },
   ];
@@ -410,6 +417,77 @@ export default function SettingsModal({ isOpen, onClose }) {
           )}
 
 
+          {/* Extreme Model Mode */}
+          {activeTab === 'extreme' && (
+            <div className="settings-section animate-fade-in">
+              <p className="settings-section-title">◆ Çok Büyük Model Orkestrasyonu</p>
+              <p className="text-small" style={{ marginBottom: '1rem', opacity: 0.7 }}>
+                70B–200B GGUF modelleri için bellek bütçesi, GPU/CPU offload ve güvenli OOM fallback ayarları.
+              </p>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Extreme Model planlayıcısı</label>
+                  <span className="text-small">Manuel GPU katmanı verilmediğinde gerçek GGUF metadata ve güncel boş belleği kullanır.</span>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={localSettings.extremeModeEnabled ?? true} onChange={(e) => update('extremeModeEnabled', e.target.checked)} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Varsayılan kapasite profili</label>
+                  <span className="text-small">Maksimum Kapasite, 100B model yüklemelerinde batch ve context belleğini sınırlar.</span>
+                </div>
+                <select className="setting-input" value={localSettings.extremePreset || 'maximum_capacity'} onChange={(e) => update('extremePreset', e.target.value)}>
+                  <option value="safe">Güvenli</option>
+                  <option value="balanced">Dengeli</option>
+                  <option value="performance">Performans</option>
+                  <option value="maximum_capacity">Maksimum Kapasite</option>
+                </select>
+              </div>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Native backend tercihi</label>
+                  <span className="text-small">Backend, kurulu llama.cpp derlemesiyle eşleşmelidir. Değişiklik farklı bir native runtime gerektirebilir.</span>
+                </div>
+                <select className="setting-input" value={localSettings.backendPreference || 'auto'} onChange={(e) => update('backendPreference', e.target.value)}>
+                  <option value="auto">Otomatik algıla</option>
+                  <option value="cuda">CUDA</option>
+                  <option value="vulkan">Vulkan</option>
+                  <option value="sycl">SYCL / oneAPI</option>
+                  <option value="metal">Metal</option>
+                  <option value="cpu">Yalnızca CPU</option>
+                </select>
+              </div>
+
+              <div className="setting-divider" />
+              <p className="settings-section-title">OOM Kurtarma</p>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Uyarlanabilir yükleme</label>
+                  <span className="text-small">Bellek taşarsa mlock, GPU katmanı, batch ve context değerlerini kontrollü sırayla düşürür.</span>
+                </div>
+                <label className="toggle-switch">
+                  <input type="checkbox" checked={localSettings.adaptiveLoad ?? true} onChange={(e) => update('adaptiveLoad', e.target.checked)} />
+                  <span className="toggle-slider" />
+                </label>
+              </div>
+
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Maksimum yükleme denemesi</label>
+                  <span className="text-small">Her deneme önceki native model bağlamını tamamen temizler.</span>
+                </div>
+                <input type="number" className="setting-input-small" min="1" max="12" value={localSettings.adaptiveMaxAttempts || 6} onChange={(e) => update('adaptiveMaxAttempts', Math.max(1, Math.min(12, parseInt(e.target.value) || 6)))} />
+              </div>
+            </div>
+          )}
+
           {/* Pruning Tab (FR-608 Context Management / Prompt Pruning) */}
           {activeTab === 'pruning' && (
             <div className="settings-section animate-fade-in">
@@ -473,6 +551,22 @@ export default function SettingsModal({ isOpen, onClose }) {
                   />
                   <span className="toggle-slider" />
                 </label>
+              </div>
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Geçmiş sıkıştırma yöntemi</label>
+                  <span className="text-small">
+                    Eski mesajları tamamen silmek yerine sınırlı bir özet olarak bağlama ekleyebilir.
+                  </span>
+                </div>
+                <select
+                  className="setting-input"
+                  value={localSettings.contextCompactionMode || 'extractive_summary'}
+                  onChange={(e) => update('contextCompactionMode', e.target.value)}
+                >
+                  <option value="extractive_summary">Sıkıştırılmış özet</option>
+                  <option value="drop_oldest">En eski mesajları kaldır</option>
+                </select>
               </div>
             </div>
           )}

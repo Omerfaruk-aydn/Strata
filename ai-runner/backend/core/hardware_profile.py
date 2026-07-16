@@ -52,6 +52,15 @@ class RAMInfo(BaseModel):
         return self
 
 
+class VirtualMemoryInfo(BaseModel):
+    """Operating-system paging/swap capacity available to mapped models."""
+
+    total_mb: int = 0
+    free_mb: int = 0
+    used_mb: int = 0
+    percent_used: float = 0.0
+
+
 class DiskInfo(BaseModel):
     type: str = "Unknown"  # SSD or HDD
     free_gb: float = 0.0
@@ -65,6 +74,7 @@ class HardwareProfile(BaseModel):
     ram: RAMInfo
     disk: DiskInfo
     cpu: CPUInfo
+    virtual_memory: VirtualMemoryInfo = Field(default_factory=VirtualMemoryInfo)
     os_info: str = ""
     selected_gpu_index: int = 0
 
@@ -181,6 +191,17 @@ def detect_ram() -> RAMInfo:
     )
 
 
+def detect_virtual_memory() -> VirtualMemoryInfo:
+    """Detect pagefile/swap capacity without mutating operating-system settings."""
+    swap = psutil.swap_memory()
+    return VirtualMemoryInfo(
+        total_mb=swap.total // (1024 * 1024),
+        free_mb=swap.free // (1024 * 1024),
+        used_mb=swap.used // (1024 * 1024),
+        percent_used=round(float(swap.percent), 1),
+    )
+
+
 def detect_disk(path: Optional[str] = None) -> DiskInfo:
     """Detect disk information for the given path or default model directory."""
     if path is None:
@@ -267,6 +288,7 @@ def get_hardware_profile(
     gpus = detect_gpus()
     cpu = detect_cpu()
     ram = detect_ram()
+    virtual_memory = detect_virtual_memory()
     disk = detect_disk(model_dir)
 
     # Select the active GPU
@@ -282,6 +304,7 @@ def get_hardware_profile(
         gpu=active_gpu,
         gpus=gpus,
         ram=ram,
+        virtual_memory=virtual_memory,
         disk=disk,
         cpu=cpu,
         os_info=os_info,

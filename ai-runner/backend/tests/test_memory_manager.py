@@ -141,7 +141,8 @@ class TestCalculateOffloadPlan:
             hardware=hw,
         )
         assert plan.gpu_layers < plan.total_layers
-        assert plan.gpu_layers + plan.cpu_layers + plan.disk_streamed_layers == plan.total_layers
+        assert plan.gpu_layers + plan.cpu_layers == plan.total_layers
+        assert plan.mapped_pressure_layers <= plan.cpu_layers
 
     def test_no_gpu_system(self):
         """System without GPU should put all layers on CPU/disk"""
@@ -156,7 +157,7 @@ class TestCalculateOffloadPlan:
         assert plan.gpu_layers == 0
 
     def test_layer_sum_equals_total(self):
-        """gpu + cpu + disk must always equal total_layers"""
+        """GPU and CPU execution layers must always equal total_layers."""
         hw = make_hardware(vram_free=4000, ram_free=8000)
         plan = calculate_offload_plan(
             model_id="test/13b-model",
@@ -165,7 +166,7 @@ class TestCalculateOffloadPlan:
             total_layers=40,
             hardware=hw,
         )
-        total = plan.gpu_layers + plan.cpu_layers + plan.disk_streamed_layers
+        total = plan.gpu_layers + plan.cpu_layers
         assert total == plan.total_layers, f"Layer sum {total} != {plan.total_layers}"
 
     def test_manual_gpu_layers_override(self):

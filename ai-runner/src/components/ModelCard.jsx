@@ -75,6 +75,11 @@ export default function ModelCard({ model, isLocal = false, onSelect }) {
         draftNumPredTokens:  settings.draftNumPredTokens,
         selectedGpuIndex:   settings.selectedGpuIndex,
         tensorSplit:        settings.tensorSplit,
+        contextCompactionMode: settings.contextCompactionMode,
+        extremePreset:      settings.extremePreset,
+        adaptiveLoad:       settings.adaptiveLoad,
+        adaptiveMaxAttempts: settings.adaptiveMaxAttempts,
+        backendPreference:  settings.backendPreference,
       });
     } catch (e) { /* handled in store */ }
   };

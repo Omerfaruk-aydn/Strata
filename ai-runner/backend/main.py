@@ -54,6 +54,7 @@ from .api.routes_chat import router as chat_router
 from .api.routes_settings import router as settings_router
 from .api.ws_telemetry import router as telemetry_router
 from .api.routes_optimizer import router as optimizer_router
+from .api.routes_extreme import router as extreme_router
 from .db import session_store
 from .api.auth import TRUSTED_BROWSER_ORIGINS, require_api_access
 
@@ -73,7 +74,9 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
     yield
     logger.info("AI Runner backend shutting down...")
+    from .core.quantization_service import quantization_manager
     from .core.inference_engine import engine
+    await quantization_manager.shutdown()
     engine.unload_model()
     logger.info("Shutdown complete")
 
@@ -100,6 +103,7 @@ app.include_router(chat_router)
 app.include_router(settings_router)
 app.include_router(telemetry_router)
 app.include_router(optimizer_router)
+app.include_router(extreme_router)
 
 
 @app.get("/")

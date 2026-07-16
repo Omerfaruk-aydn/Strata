@@ -10,7 +10,17 @@ import httpx
 import pytest
 import pytest_asyncio
 
+from backend.core.extreme_model import estimated_specification
+from backend.core.hardware_profile import (
+    CPUInfo,
+    DiskInfo,
+    GPUInfo,
+    HardwareProfile,
+    RAMInfo,
+    VirtualMemoryInfo,
+)
 from backend.core.inference_engine import GenerationResult, ModelInfo, engine
+from backend.core.runtime_capabilities import RuntimeCapabilities
 from backend.db import session_store
 from backend.main import app
 from backend.api import routes_models, routes_optimizer
@@ -32,12 +42,14 @@ async def api_client(tmp_path, monkeypatch):
         engine._config,
         engine._is_generating,
         engine._should_stop,
+        engine._last_load_report,
     )
     engine._model = None
     engine._model_info = None
     engine._config = None
     engine._is_generating = False
     engine._should_stop = False
+    engine._last_load_report = None
     engine._stop_event.clear()
 
     transport = httpx.ASGITransport(app=app)
@@ -53,6 +65,7 @@ async def api_client(tmp_path, monkeypatch):
         engine._config,
         engine._is_generating,
         engine._should_stop,
+        engine._last_load_report,
     ) = original_state
     engine._stop_event.clear()
 
@@ -237,6 +250,12 @@ async def test_settings_allowlist_network_consent_and_normalization(api_client):
                 "allow_network_access": True,
                 "api_key": "network-secret",
                 "tensor_split": [3, 1],
+                "extreme_mode_enabled": True,
+                "extreme_preset": "maximum_capacity",
+                "adaptive_load": True,
+                "adaptive_max_attempts": 7,
+                "backend_preference": "auto",
+                "context_compaction_mode": "extractive_summary",
             }
         },
     )
@@ -246,6 +265,9 @@ async def test_settings_allowlist_network_consent_and_normalization(api_client):
     settings = (await api_client.get("/api/settings", headers=auth)).json()["settings"]
     assert settings["allow_network_access"] is True
     assert settings["tensor_split"] == [0.75, 0.25]
+    assert settings["extreme_preset"] == "maximum_capacity"
+    assert settings["adaptive_max_attempts"] == 7
+    assert settings["context_compaction_mode"] == "extractive_summary"
 
     forbidden_key = await api_client.put(
         "/api/settings",
@@ -615,6 +637,90 @@ async def test_model_load_unload_and_optimization_contract(api_client, monkeypat
         json={"tensor_split": [1, 0]},
     )
     assert invalid_split.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cpu_backend_uses_cpu_plan_and_model_volume(api_client, monkeypatch, tmp_path):
+    model_dir = tmp_path / "models"
+    model_dir.mkdir()
+    model_path = model_dir / "cpu-model.gguf"
+    model_path.write_bytes(b"GGUF" + b"x" * 32)
+    model = ModelMetadata(
+        id="org/cpu-7B-GGUF",
+        display_name="CPU Model",
+        parameter_count=7_000_000_000,
+        downloaded_quant="Q4_K_M",
+        file_size_bytes=4 * 1024**3,
+        local_path=str(model_path),
+    )
+    gpu = GPUInfo(name="NVIDIA RTX", vram_total_mb=20_000, vram_free_mb=18_000)
+    hardware = HardwareProfile(
+        gpu=gpu,
+        gpus=[gpu],
+        ram=RAMInfo(total_mb=64_000, free_mb=56_000),
+        virtual_memory=VirtualMemoryInfo(total_mb=32_000, free_mb=30_000),
+        disk=DiskInfo(type="SSD", free_gb=500, path=str(model_dir)),
+        cpu=CPUInfo(name="Test CPU", cores=8, threads=16),
+    )
+    runtime = RuntimeCapabilities(
+        llama_cpp_installed=True,
+        active_backend="cuda",
+        gpu_offload_supported=True,
+    )
+    captured = {}
+
+    def fake_hardware_profile(**kwargs):
+        captured["model_dir"] = kwargs.get("model_dir")
+        return hardware
+
+    def fake_load(model_id, local_path, config):
+        captured["config"] = config
+        engine._config = config
+        return ModelInfo(
+            model_id=model_id,
+            model_path=local_path,
+            n_gpu_layers=config.n_gpu_layers,
+            context_length=config.context_length,
+            total_layers=32,
+            is_loaded=True,
+        )
+
+    monkeypatch.setattr(routes_models.model_manager, "model_dir", str(model_dir))
+    monkeypatch.setattr(routes_models.model_manager, "get_local_models", lambda: [model])
+    monkeypatch.setattr(routes_models.model_manager, "update_last_used", lambda model_id: None)
+    monkeypatch.setattr(routes_models, "get_hardware_profile", fake_hardware_profile)
+    monkeypatch.setattr(routes_models, "detect_runtime_capabilities", lambda hardware: runtime)
+    monkeypatch.setattr(
+        routes_models,
+        "specification_from_gguf",
+        lambda *args, **kwargs: (
+            estimated_specification(model.id, "Q4_K_M", model.parameter_count),
+            SimpleNamespace(),
+        ),
+    )
+    monkeypatch.setattr(engine, "load_model", fake_load)
+
+    response = await api_client.post(
+        f"/api/models/{model.id}/load",
+        json={
+            "backend_preference": "cpu",
+            "adaptive_load": False,
+            "context_length": 32768,
+            "n_batch": 4096,
+            "kv_cache_type": "f16",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert captured["model_dir"] == str(model_dir)
+    assert captured["config"].n_gpu_layers == 0
+    assert captured["config"].flash_attn is False
+    assert captured["config"].context_length == 2048
+    assert captured["config"].n_batch == 64
+    assert captured["config"].kv_cache_type == "q4_0"
+    assert payload["feasibility"]["runtime"]["backend"] == "cpu"
+    assert payload["runtime_profile"]["backend"] == "cpu"
 
 
 @pytest.mark.asyncio

@@ -3,8 +3,10 @@
 > A production-oriented local GGUF model runner for Windows, built with React, FastAPI, llama.cpp, and Tauri.
 
 [![CI](https://github.com/Omerfaruk-aydn/Strata/actions/workflows/ci.yml/badge.svg)](https://github.com/Omerfaruk-aydn/Strata/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](ai-runner/LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4.svg)](https://www.microsoft.com/windows)
+
+> The implementation is located in [`ai-runner/`](ai-runner/). Run the development and build commands from that directory.
 
 AI Runner lets you discover, download, configure, and run GGUF language models locally. It combines a React desktop interface with an authenticated FastAPI service and a Tauri 2 shell. After a model is available locally, inference, prompts, completions, sessions, and settings remain on the machine.
 
@@ -15,6 +17,8 @@ AI Runner lets you discover, download, configure, and run GGUF language models l
 - Resumable HTTP Range downloads with progress, speed, ETA, cancellation, and partial-file recovery.
 - GGUF magic-byte validation, optional SHA-256 verification, safe filenames, and disk/cache limits.
 - GPU layer planning, selected GPU support, multi-GPU tensor splitting, CPU thread controls, mmap, mlock, Flash Attention, and KV-cache quantization.
+- Extreme Model Center for 70B–200B feasibility analysis, capacity presets, adaptive OOM recovery, measured benchmarking, and hardware-specific known-good profiles.
+- Native backend capability detection for CUDA, Vulkan, Metal, SYCL, and CPU builds, plus managed llama.cpp quantization jobs when llama-quantize is installed.
 - Streaming chat with interrupt support, persisted SQLite sessions, Markdown/JSON export, and partial-response recovery.
 - OpenAI-compatible model and chat endpoints.
 - Live GPU, VRAM, RAM, TTFT, token-speed, and generation telemetry over WebSocket.
@@ -63,7 +67,7 @@ flowchart LR
 - PowerShell.
 - A Python environment containing the intended CPU/CUDA-compatible llama-cpp-python wheel.
 
-Pinned runtime dependencies are in [backend/requirements.txt](backend/requirements.txt). Development and CI dependencies are separated into [backend/requirements-dev.txt](backend/requirements-dev.txt) and [backend/requirements-ci.txt](backend/requirements-ci.txt).
+Pinned runtime dependencies are in [ai-runner/backend/requirements.txt](ai-runner/backend/requirements.txt). Development and CI dependencies are separated into [ai-runner/backend/requirements-dev.txt](ai-runner/backend/requirements-dev.txt) and [ai-runner/backend/requirements-ci.txt](ai-runner/backend/requirements-ci.txt).
 
 ## Quick start
 
@@ -115,6 +119,43 @@ Models are stored by default under:
 
 Downloads use temporary *.gguf.part files until validation succeeds. The model directory and cache limit can be changed from Settings.
 
+## Extreme Model Mode
+
+Extreme Model Mode is designed for models that do not fit entirely in VRAM. Open **Extreme Mode** from the header or press Ctrl+Shift+E.
+
+The capacity engine:
+
+1. Reads the actual GGUF architecture, parameter count, layer count, attention heads, KV heads, embedding size, and native context limit.
+2. Detects the active native llama.cpp backend instead of assuming that an installed GPU is usable.
+3. Separately budgets model weights, KV cache, compute buffers, VRAM reserve, RAM reserve, and physical working-set shortfall.
+4. Produces an auditable GPU/CPU layer plan and distinguishes RAM-resident execution from file-backed mmap pressure.
+5. Combines safe VRAM capacity across multiple GPUs and derives or validates tensor-split proportions.
+6. Loads with bounded OOM recovery. Between attempts it can disable mlock, reduce GPU layers, reduce batch size, and reduce context size.
+7. Persists the successful configuration against a model and hardware fingerprint.
+8. Runs an on-device benchmark to replace planning estimates with measured token speed, TTFT, RAM, and system-wide VRAM data.
+
+The built-in profiles are:
+
+| Profile | Primary goal | Default context cap | Default batch |
+|---|---|---:|---:|
+| Safe | Maximum safety margin | 2,048 | 128 |
+| Balanced | Reliability and usable throughput | 4,096 | 256 |
+| Performance | Throughput when memory is comfortable | 8,192 | 512 |
+| Maximum Capacity | Load the largest practical model | 2,048 | 64 |
+
+For a 100B model on a 20 GB VRAM PC, physical system RAM remains important. AI Runner can split weights between GPU and CPU and use file-backed mmap under pressure, but it cannot make 100B weights physically fit inside 20 GB. Q3/IQ3-class GGUF files commonly require tens of gigabytes beyond VRAM; 64 GB RAM is a practical lower bound for many configurations and 128 GB provides substantially more headroom.
+
+Adaptive rebalancing is performed only between generations by unloading and recreating the llama.cpp context. Transformer layers are never moved while a token generation is active.
+
+Managed quantization uses the official llama.cpp companion executable when it is available. Point AI Runner at a trusted binary before startup:
+
+~~~powershell
+$env:AI_RUNNER_LLAMA_QUANTIZE = "C:\path\to\llama-quantize.exe"
+python -m backend.main
+~~~
+
+Quantization runs as a single managed background job, validates both source and output GGUF structure, cleans partial output after failure/cancellation, and registers completed outputs in the local model shelf.
+
 ## API
 
 The complete interactive API reference is available at http://127.0.0.1:8420/docs.
@@ -128,6 +169,7 @@ The complete interactive API reference is available at http://127.0.0.1:8420/doc
 | Settings | /api/settings/* | Read, validate, update, import, export |
 | Hardware | /api/hardware/* | Hardware profile and refresh |
 | Optimizer | /api/optimizer/* | Optimization actions and status |
+| Extreme models | /api/extreme/* | Feasibility, capabilities, benchmark, rebalance, profiles, quantization |
 | OpenAI compatibility | GET /v1/models, POST /v1/chat/completions | External client integration |
 | Telemetry | WS /ws/telemetry | Live hardware and generation metrics |
 
@@ -201,6 +243,12 @@ Settings are persisted in SQLite and validated through an allowlist.
 | kv_cache_type | q4_0 | KV cache quantization |
 | selected_gpu_index | 0 | Primary GPU index |
 | tensor_split | unset | Multi-GPU split proportions |
+| extreme_mode_enabled | true | Use metadata-aware capacity planning when GPU layers are automatic |
+| extreme_preset | maximum_capacity | Default large-model capacity profile |
+| adaptive_load | true | Retry memory-related load failures with safer settings |
+| adaptive_max_attempts | 6 | Maximum bounded native load attempts |
+| backend_preference | auto | Validate or force the native compute backend |
+| context_compaction_mode | extractive_summary | Compress dropped history or remove oldest messages |
 
 Local runtime data, logs, the SQLite database, model cache, and downloaded models live under %USERPROFILE%\\.ai-runner\\.
 
@@ -262,8 +310,8 @@ The repository CI workflow runs the frontend build, backend tests with the cover
 
 ## Validation status
 
-- 175 backend tests passed.
-- 74.51% backend source coverage.
+- 214 backend tests passed.
+- 77.45% backend source coverage.
 - 70% minimum coverage gate.
 - 0 npm audit vulnerabilities.
 - No known vulnerabilities in the pinned Python dependency audit.
@@ -297,6 +345,10 @@ Strata/
 - Multi-file or sharded GGUF repositories are not downloaded as a single model; choose an available single-file quantization.
 - Speculative decoding uses llama.cpp prompt lookup support and does not automatically download a separate draft model.
 - Native GPU acceleration depends on the selected llama-cpp-python wheel and driver/runtime compatibility.
+- llama.cpp backends are native build choices. Selecting CUDA or Vulkan validates the installed runtime; it does not transform one native build into another without installation and restart.
+- SSD-backed mmap can make an oversized model loadable under memory pressure, but it is not zero-cost layer streaming and can be much slower than a RAM-resident working set.
+- The legacy `disk_streamed_layers` API property is retained only as a deprecated layer-equivalent pressure estimate. All non-GPU layers execute on the CPU; `mapped_pressure_layers` and `storage_mode` describe file-backed paging truthfully.
+- Managed re-quantization requires a trusted llama-quantize executable and may reduce quality further when the source model is already quantized.
 - Generated installers, model files, caches, and frozen sidecar binaries are not committed.
 
 ## Keyboard shortcuts
@@ -307,6 +359,7 @@ Strata/
 | Ctrl+K | Focus model search |
 | Ctrl+, | Open settings |
 | Ctrl+Shift+O | Open system optimizer |
+| Ctrl+Shift+E | Open Extreme Model Center |
 | Ctrl+B | Toggle sidebar |
 | Ctrl+. | Toggle telemetry panel |
 | Enter | Send message |
@@ -325,4 +378,4 @@ Please do not commit model weights, API keys, local databases, build directories
 
 ## License
 
-AI Runner is released under the [MIT License](LICENSE).
+AI Runner is released under the [MIT License](ai-runner/LICENSE).

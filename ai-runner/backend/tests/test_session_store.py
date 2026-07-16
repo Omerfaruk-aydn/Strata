@@ -218,3 +218,55 @@ class TestExport:
     async def test_export_nonexistent_session(self, test_db):
         md = await session_store.export_session_markdown("ghost_id")
         assert md == ""
+
+
+@pytest.mark.asyncio
+class TestRuntimeProfiles:
+
+    async def test_profile_upsert_and_benchmark_roundtrip(self, test_db):
+        created = await session_store.save_runtime_profile(
+            model_id="test/100B",
+            model_path_hash="modelhash",
+            hardware_fingerprint="hardwarehash",
+            backend="cuda",
+            preset="maximum_capacity",
+            config={"n_gpu_layers": 31, "context_length": 2048},
+            load_report={"succeeded": True, "attempts": [{"attempt": 1}]},
+        )
+        assert created["model_id"] == "test/100B"
+        assert created["config"]["n_gpu_layers"] == 31
+
+        updated = await session_store.save_runtime_profile(
+            model_id="test/100B",
+            model_path_hash="modelhash",
+            hardware_fingerprint="hardwarehash",
+            backend="cuda",
+            preset="balanced",
+            config={"n_gpu_layers": 28, "context_length": 4096},
+            load_report={"succeeded": True, "recovered_from_oom": True},
+        )
+        assert updated["id"] == created["id"]
+        assert updated["preset"] == "balanced"
+        assert updated["config"]["n_gpu_layers"] == 28
+
+        saved = await session_store.save_runtime_benchmark(
+            created["id"],
+            {"tokens_per_second": 1.4, "ttft_ms": 820},
+        )
+        assert saved is True
+        profiles = await session_store.list_runtime_profiles("test/100B")
+        assert len(profiles) == 1
+        assert profiles[0]["benchmark"]["tokens_per_second"] == 1.4
+
+    async def test_profile_lookup_is_hardware_specific(self, test_db):
+        await session_store.save_runtime_profile(
+            model_id="test/model",
+            model_path_hash="path",
+            hardware_fingerprint="hardware-a",
+            backend="cuda",
+            preset="safe",
+            config={},
+            load_report={},
+        )
+        assert await session_store.get_runtime_profile("test/model", "path", "hardware-a")
+        assert await session_store.get_runtime_profile("test/model", "path", "hardware-b") is None

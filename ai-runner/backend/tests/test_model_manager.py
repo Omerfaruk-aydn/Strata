@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import struct
 
 import pytest
 
@@ -19,8 +20,18 @@ def manager(tmp_path):
     return instance
 
 
+def gguf_bytes(payload=b"test-model"):
+    return (
+        b"GGUF"
+        + struct.pack("<I", 3)
+        + struct.pack("<Q", 0)
+        + struct.pack("<Q", 0)
+        + payload
+    )
+
+
 def write_gguf(path, payload=b"test-model"):
-    path.write_bytes(b"GGUF" + payload)
+    path.write_bytes(gguf_bytes(payload))
 
 
 def test_parameter_count_parser_uses_boundaries_and_decimals(manager):
@@ -77,7 +88,7 @@ async def test_download_finalizes_valid_file_and_caches_checksum(manager, monkey
 
     async def fake_download(**kwargs):
         with open(kwargs["part_path"], "wb") as model_file:
-            model_file.write(b"GGUFdownloaded")
+            model_file.write(gguf_bytes(b"downloaded"))
         return kwargs["part_path"]
 
     monkeypatch.setattr(manager, "_download_to_part", fake_download)
@@ -96,7 +107,7 @@ async def test_download_finalizes_valid_file_and_caches_checksum(manager, monkey
     assert cache["model_id"] == "org/Model-13B-GGUF"
     assert cache["remote_filename"] == "remote-Q4_K_M.gguf"
     assert cache["parameter_count"] == 13_000_000_000
-    assert cache["sha256"] == hashlib.sha256(b"GGUFdownloaded").hexdigest()
+    assert cache["sha256"] == hashlib.sha256(gguf_bytes(b"downloaded")).hexdigest()
 
 
 @pytest.mark.asyncio
@@ -120,7 +131,7 @@ async def test_download_rejects_invalid_gguf(manager, monkeypatch):
 def test_cache_checksum_matches_file(manager, tmp_path):
     model_file = tmp_path / "models" / "checksum.gguf"
     write_gguf(model_file, b"checksum")
-    assert manager._sha256(str(model_file)) == hashlib.sha256(b"GGUFchecksum").hexdigest()
+    assert manager._sha256(str(model_file)) == hashlib.sha256(gguf_bytes(b"checksum")).hexdigest()
 
 
 def test_download_resolution_matches_quant_token_not_substring(manager, monkeypatch):

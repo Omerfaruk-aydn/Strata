@@ -37,7 +37,7 @@
     "offload_plan": "Load Plan",
     "gpu_layers": "GPU Layers",
     "ram_layers": "RAM Layers",
-    "disk_layers": "Disk Layers",
+    "disk_layers": "Mmap Memory Pressure",
     "estimated_speed": "Estimated Speed",
     "recommendation": "Recommendation",
     "apply_plan": "Apply",

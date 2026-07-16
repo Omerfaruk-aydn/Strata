@@ -62,6 +62,51 @@ def test_validate_gguf_extracts_common_metadata(tmp_path):
     assert metadata.head_count_kv == 8
 
 
+def test_validate_gguf_uses_architecture_specific_keys_after_large_array(tmp_path):
+    token_ids = list(range(1500))
+    array_value = (
+        struct.pack("<I", 4)
+        + struct.pack("<Q", len(token_ids))
+        + b"".join(struct.pack("<I", item) for item in token_ids)
+    )
+    entries = [
+        gguf_metadata_entry("general.architecture", 8, gguf_string("qwen2")),
+        gguf_metadata_entry("tokenizer.test.ids", 9, array_value),
+        gguf_metadata_entry("general.name", 8, gguf_string("Qwen Test")),
+        gguf_metadata_entry("general.size_label", 8, gguf_string("100B")),
+        gguf_metadata_entry("general.parameter_count", 10, struct.pack("<Q", 100_000_000_000)),
+        gguf_metadata_entry("general.file_type", 4, struct.pack("<I", 15)),
+        gguf_metadata_entry("general.quantization_version", 4, struct.pack("<I", 2)),
+        gguf_metadata_entry("qwen2.context_length", 4, struct.pack("<I", 32768)),
+        gguf_metadata_entry("qwen2.embedding_length", 4, struct.pack("<I", 8192)),
+        gguf_metadata_entry("qwen2.block_count", 4, struct.pack("<I", 96)),
+        gguf_metadata_entry("qwen2.attention.head_count", 4, struct.pack("<I", 64)),
+        gguf_metadata_entry("qwen2.attention.head_count_kv", 4, struct.pack("<I", 8)),
+    ]
+    path = tmp_path / "qwen-100b.gguf"
+    path.write_bytes(
+        b"GGUF"
+        + struct.pack("<I", 3)
+        + struct.pack("<Q", 1000)
+        + struct.pack("<Q", len(entries))
+        + b"".join(entries)
+    )
+
+    metadata = validate_gguf_file(str(path))
+    assert metadata.is_valid is True
+    assert metadata.architecture == "qwen2"
+    assert metadata.model_name == "Qwen Test"
+    assert metadata.size_label == "100B"
+    assert metadata.parameter_count == 100_000_000_000
+    assert metadata.context_length == 32768
+    assert metadata.embedding_length == 8192
+    assert metadata.block_count == 96
+    assert metadata.head_count == 64
+    assert metadata.head_count_kv == 8
+    assert metadata.file_type == 15
+    assert metadata.quantization_version == 2
+
+
 def test_validate_gguf_error_paths(tmp_path):
     missing = validate_gguf_file(str(tmp_path / "missing.gguf"))
     assert missing.is_valid is False
@@ -80,6 +125,20 @@ def test_validate_gguf_error_paths(tmp_path):
     truncated_path = tmp_path / "truncated.gguf"
     truncated_path.write_bytes(b"GGUF" + struct.pack("<I", 3) + b"x" * 8)
     assert "okunamadı" in validate_gguf_file(str(truncated_path)).error
+
+    oversized_array = tmp_path / "oversized-array.gguf"
+    broken_entry = gguf_metadata_entry(
+        "tokenizer.ids",
+        9,
+        struct.pack("<I", 4) + struct.pack("<Q", 100) + struct.pack("<I", 1),
+    )
+    oversized_array.write_bytes(
+        b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0)
+        + struct.pack("<Q", 1) + broken_entry
+    )
+    broken = validate_gguf_file(str(oversized_array))
+    assert broken.is_valid is False
+    assert "dosya sınırını" in (broken.error or "")
 
 
 @pytest.mark.parametrize(

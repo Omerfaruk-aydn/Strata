@@ -366,8 +366,15 @@ DEFAULT_SETTINGS = {
     "max_context_length": 4096,
     "max_history_messages": 20,
     "auto_context_prune": True,
+    "context_compaction_mode": "extractive_summary",
     "selected_gpu_index": 0,
     "tensor_split": None,
+    # Extreme Model Mode
+    "extreme_mode_enabled": True,
+    "extreme_preset": "maximum_capacity",
+    "adaptive_load": True,
+    "adaptive_max_attempts": 6,
+    "backend_preference": "auto",
 }
 
 
@@ -377,3 +384,107 @@ async def ensure_default_settings() -> None:
     missing = {k: v for k, v in DEFAULT_SETTINGS.items() if k not in current}
     if missing:
         await update_settings(missing)
+
+
+# ── Hardware-specific runtime profiles ──
+
+async def save_runtime_profile(
+    *,
+    model_id: str,
+    model_path_hash: str,
+    hardware_fingerprint: str,
+    backend: str,
+    preset: str,
+    config: Dict[str, Any],
+    load_report: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist the last known-good configuration for a model/hardware pair."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO runtime_profiles (
+                model_id, model_path_hash, hardware_fingerprint, backend, preset,
+                config_json, load_report_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(model_id, model_path_hash, hardware_fingerprint) DO UPDATE SET
+                backend = excluded.backend,
+                preset = excluded.preset,
+                config_json = excluded.config_json,
+                load_report_json = excluded.load_report_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                model_id, model_path_hash, hardware_fingerprint, backend, preset,
+                json.dumps(config, ensure_ascii=False),
+                json.dumps(load_report, ensure_ascii=False),
+                now, now,
+            ),
+        )
+        await db.commit()
+    profile = await get_runtime_profile(model_id, model_path_hash, hardware_fingerprint)
+    if profile is None:
+        raise RuntimeError("Çalışma profili kaydedilemedi")
+    return profile
+
+
+async def get_runtime_profile(
+    model_id: str,
+    model_path_hash: str,
+    hardware_fingerprint: str,
+) -> Optional[Dict[str, Any]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT * FROM runtime_profiles
+            WHERE model_id = ? AND model_path_hash = ? AND hardware_fingerprint = ?
+            """,
+            (model_id, model_path_hash, hardware_fingerprint),
+        )
+        row = await cursor.fetchone()
+    return _runtime_profile_row(row) if row else None
+
+
+async def list_runtime_profiles(model_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        if model_id:
+            cursor = await db.execute(
+                "SELECT * FROM runtime_profiles WHERE model_id = ? ORDER BY updated_at DESC",
+                (model_id,),
+            )
+        else:
+            cursor = await db.execute("SELECT * FROM runtime_profiles ORDER BY updated_at DESC")
+        rows = await cursor.fetchall()
+    return [_runtime_profile_row(row) for row in rows]
+
+
+async def save_runtime_benchmark(
+    profile_id: int,
+    benchmark: Dict[str, Any],
+) -> bool:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "UPDATE runtime_profiles SET benchmark_json = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(benchmark, ensure_ascii=False), now, profile_id),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+def _runtime_profile_row(row: aiosqlite.Row) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "model_id": row["model_id"],
+        "model_path_hash": row["model_path_hash"],
+        "hardware_fingerprint": row["hardware_fingerprint"],
+        "backend": row["backend"],
+        "preset": row["preset"],
+        "config": json.loads(row["config_json"] or "{}"),
+        "load_report": json.loads(row["load_report_json"] or "{}"),
+        "benchmark": json.loads(row["benchmark_json"]) if row["benchmark_json"] else None,
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
