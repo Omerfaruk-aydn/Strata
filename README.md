@@ -10,6 +10,28 @@
 
 AI Runner lets you discover, download, configure, and run GGUF language models locally. It combines a React desktop interface with an authenticated FastAPI service and a Tauri 2 shell. After a model is available locally, inference, prompts, completions, sessions, and settings remain on the machine.
 
+## Vision
+
+AI Runner exists to make large language models practical on ordinary machines.
+Its purpose is to squeeze the most capability out of limited VRAM, RAM, and CPU budgets so that people can run serious AI locally without needing datacenter hardware.
+The project focuses on one core idea: give every user a realistic path to useful, high-performance on-device AI, even when the machine is constrained.
+
+## Innovation Direction
+
+The next wave of improvement is not just "smaller models" but smarter model execution.
+The most important areas to push forward are:
+
+- Better quantization strategies that preserve reasoning quality at lower bit widths.
+- More accurate capacity planning so the app can predict fit before a load attempt.
+- Smarter layer placement across GPU, CPU, and file-backed memory pressure.
+- Adaptive context compression that keeps conversations usable without wasting memory.
+- Runtime-aware backend selection that automatically chooses the best engine for the hardware.
+- Measured optimization loops that learn from benchmark results instead of relying only on estimates.
+- Safer managed re-quantization workflows for rebuilding local models into more efficient formats.
+- Multi-GPU balancing that treats uneven VRAM as a first-class scheduling problem.
+
+If the project keeps evolving in that direction, it can become more than a local runner: it can become a practical execution layer for high-end AI on modest hardware.
+
 ## Highlights
 
 - Local-first inference using llama.cpp and GGUF models.
