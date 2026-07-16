@@ -542,10 +542,13 @@ async def stop_generate_text():
 async def strata_chat_completions(request: StrataChatRequest):
     """OpenAI-shaped non-streaming chat adapter for the Strata generator."""
     if request.stream:
-        prompt = format_chat_prompt([
-            StrataChatMessage(message.role, message.content)
-            for message in request.messages
-        ])
+        try:
+            prompt = format_chat_prompt([
+                StrataChatMessage(message.role, message.content)
+                for message in request.messages
+            ])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         generation_values = request.model_dump(exclude={"messages", "stream"})
         generation_values["prompt"] = prompt
         lower_stream = await strata_generate_stream(GenerateRequest(**generation_values))

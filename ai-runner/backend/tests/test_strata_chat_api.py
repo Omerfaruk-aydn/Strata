@@ -40,6 +40,14 @@ async def test_strata_chat_stream_maps_token_events_to_openai_deltas(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_strata_chat_stream_maps_invalid_messages_to_422():
+    request = _request(messages=[{"role": "user", "content": "  "}], stream=True)
+    with pytest.raises(routes_ultra.HTTPException) as failure:
+        await routes_ultra.strata_chat_completions(request)
+    assert failure.value.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_strata_chat_maps_generation_to_openai_shape(monkeypatch):
     async def fake_generate(request):
         assert "<|user|>" in request.prompt
