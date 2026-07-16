@@ -51,7 +51,9 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
     key: `${index}:${model.id}:${model.downloaded_quant || ''}:${model.local_path || ''}`,
     model,
   })), [localModels]);
-  const selectedModel = modelOptions.find((entry) => entry.key === selectedKey)?.model || null;
+  const selectedModel = modelOptions.find((entry) => entry.key === selectedKey)?.model
+    || extreme.ultraModels.find((model) => model.id === selectedKey)
+    || null;
   const report = extreme.report;
   const status = STATUS_STYLES[report?.status] || STATUS_STYLES.blocked;
   const activeJobs = extreme.quantization.jobs?.filter((job) => ['queued', 'running'].includes(job.status)) || [];
@@ -72,10 +74,10 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
 
   useEffect(() => {
     if (!selectedKey && modelOptions.length > 0) setSelectedKey(modelOptions[0].key);
-    if (selectedKey && !modelOptions.some((entry) => entry.key === selectedKey)) {
+    if (selectedKey && !modelOptions.some((entry) => entry.key === selectedKey) && !extreme.ultraModels.some((model) => model.id === selectedKey)) {
       setSelectedKey(modelOptions[0]?.key || '');
     }
-  }, [modelOptions, selectedKey]);
+  }, [modelOptions, selectedKey, extreme.ultraModels]);
 
   useEffect(() => {
     if (!isOpen || activeJobs.length === 0) return undefined;
