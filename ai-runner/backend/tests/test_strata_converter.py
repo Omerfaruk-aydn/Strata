@@ -66,6 +66,20 @@ def test_q4_k_gguf_converts_to_strata(tmp_path: Path):
     assert result["tensor_count"] == 1
 
 
+def test_q2_k_gguf_converts_to_strata(tmp_path: Path):
+    source = tmp_path / "tiny-q2-k.gguf"
+    target = tmp_path / "tiny-q2-k.strata"
+    # Q2_K type 10: d/dmin + 16 packed scale/min bytes + 64 packed 2-bit bytes.
+    block = struct.pack("<ee", 1.0, 0.0) + bytes(16) + bytes(64)
+    _write_float_gguf(source, 10, [0] * 32, raw_override=block)
+    data = bytearray(source.read_bytes())
+    dim_offset = data.index(struct.pack("<Q", 4))
+    data[dim_offset:dim_offset + 8] = struct.pack("<Q", 256)
+    source.write_bytes(data)
+    result = convert_gguf_to_strata(source, target, group_size=256)
+    assert result["tensor_count"] == 1
+
+
 def test_q5_k_gguf_converts_to_strata(tmp_path: Path):
     source = tmp_path / "tiny-q5-k.gguf"
     target = tmp_path / "tiny-q5-k.strata"
