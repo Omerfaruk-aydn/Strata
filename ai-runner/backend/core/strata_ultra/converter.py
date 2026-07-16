@@ -61,6 +61,48 @@ def _decode_q2_k(raw: bytes, count: int) -> tuple[float, ...]:
     return tuple(values)
 
 
+def _decode_q3_k(raw: bytes, count: int) -> tuple[float, ...]:
+    """Decode GGML Q3_K using the upstream high-bit mask and scale packing."""
+    block_size = 32 + 64 + 12 + 2
+    if count % _QK_K or len(raw) != (count // _QK_K) * block_size:
+        raise ValueError("Invalid Q3_K tensor block size")
+    values = []
+    for offset in range(0, len(raw), block_size):
+        hmask = raw[offset:offset + 32]
+        quant = raw[offset + 32:offset + 96]
+        packed = raw[offset + 96:offset + 108]
+        d_all = struct.unpack_from("<e", raw, offset + 108)[0]
+        aux = bytearray(16)
+        aux[:12] = packed
+        tmp = struct.unpack_from("<I", aux, 8)[0]
+        a0, a1 = struct.unpack_from("<II", aux, 0)
+        struct.pack_into("<I", aux, 8, ((a0 >> 4) & 0x0F0F0F0F) | (((tmp >> 4) & 0x03030303) << 4))
+        struct.pack_into("<I", aux, 12, ((a1 >> 4) & 0x0F0F0F0F) | (((tmp >> 6) & 0x03030303) << 4))
+        struct.pack_into("<I", aux, 0, (a0 & 0x0F0F0F0F) | (((tmp >> 0) & 0x03030303) << 4))
+        struct.pack_into("<I", aux, 4, (a1 & 0x0F0F0F0F) | (((tmp >> 2) & 0x03030303) << 4))
+        scales = struct.unpack("<16b", aux)
+        q_offset = 0
+        scale_index = 0
+        mask = 1
+        for _ in range(2):
+            shift = 0
+            for _ in range(4):
+                dl = d_all * (scales[scale_index] - 32)
+                scale_index += 1
+                for local in range(16):
+                    high = 0 if (hmask[local] & mask) else 4
+                    values.append(dl * (((quant[q_offset + local] >> shift) & 3) - high))
+                dl = d_all * (scales[scale_index] - 32)
+                scale_index += 1
+                for local in range(16):
+                    high = 0 if (hmask[local + 16] & mask) else 4
+                    values.append(dl * (((quant[q_offset + local + 16] >> shift) & 3) - high))
+                shift += 2
+                mask <<= 1
+            q_offset += 32
+    return tuple(values)
+
+
 def _get_scale_min_q4_k(index: int, scales: bytes) -> tuple[int, int]:
     if index < 4:
         return scales[index] & 0x3F, scales[index + 4] & 0x3F
@@ -228,8 +270,8 @@ def convert_gguf_to_strata(
         })
         converted = 0
         for name, dims, tensor_type, offset in infos:
-            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K}:
-                supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q4_K/Q5_K/Q6_K only in this converter"
+            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K}:
+                supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
@@ -244,6 +286,8 @@ def convert_gguf_to_strata(
                 byte_count = (count // _QK) * 34
             elif tensor_type == GGML_TYPE_Q2_K:
                 byte_count = (count // _QK_K) * 84
+            elif tensor_type == GGML_TYPE_Q3_K:
+                byte_count = (count // _QK_K) * 110
             elif tensor_type == GGML_TYPE_Q4_K:
                 byte_count = (count // _QK_K) * 144
             elif tensor_type == GGML_TYPE_Q5_K:
@@ -264,6 +308,8 @@ def convert_gguf_to_strata(
                 values = _decode_q8_0(raw, count)
             elif tensor_type == GGML_TYPE_Q2_K:
                 values = _decode_q2_k(raw, count)
+            elif tensor_type == GGML_TYPE_Q3_K:
+                values = _decode_q3_k(raw, count)
             elif tensor_type == GGML_TYPE_Q4_K:
                 values = _decode_q4_k(raw, count)
             elif tensor_type == GGML_TYPE_Q5_K:
