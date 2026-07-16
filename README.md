@@ -199,6 +199,7 @@ Current capabilities:
 - LRU layer paging with a hard byte budget.
 - Runtime-managed `sign1`, `ternary05`, and experimental `sparse05` KV caches with sliding-window eviction. `sparse05` is sparsity-dependent and reports an estimate; it is not a universal literal half-bit representation for dense activations.
 - API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
+- OpenAI-shaped Strata chat completions and token-level SSE generation endpoints with cooperative stop/timeout handling.
 - Preflight inspection reports codec distribution, packed/scales memory, tokenizer metadata, missing block roles, and experimental generation readiness.
 
 The Strata executor has a Python/NumPy correctness path, an optional native CUDA ternary matvec backend, and an optional native GGML IQ bridge. A `.strata` file cannot be loaded by the existing llama.cpp inference path. GGUF architectures with tokenizer metadata incompatible with the optional BPE adapter use the explicit byte fallback. IQ4_NL conversion works in Python; IQ1/IQ2/IQ3/IQ4_XS conversion becomes available only when `strata_iq` is built against a matching GGML checkout and exposed through `STRATA_IQ_LIBRARY`. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.

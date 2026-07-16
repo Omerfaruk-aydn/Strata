@@ -16,3 +16,5 @@ async def test_capabilities_report_active_tokenizer_backend():
     assert isinstance(result["native_iq_decoder"], bool)
     assert result["readiness"]["container_io"] is True
     assert result["readiness"]["production_chat_runtime"] is False
+    assert result["readiness"]["chat_completions_api"] is True
+    assert result["readiness"]["sse_generation_api"] is True

@@ -220,7 +220,7 @@ async def capabilities():
         "iq_codecs": iq_codecs,
         "native_iq_decoder": native_iq,
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
-        "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
+        "features": ["bit-packing", "group-scales", "layer-paging", "benchmark", "chat-completions", "sse-generation"],
         "execution_backends": {
             "python": {"available": True, "active": True, "weight_codecs": ["ternary-q05", "sparse05"]},
             "numpy": {"available": True, "active": False, "weight_codecs": ["ternary-q05", "sparse05"]},
@@ -233,6 +233,8 @@ async def capabilities():
             "native_cuda_executor": cuda,
             "native_iq_conversion": native_iq,
             "experimental_generation": True,
+            "chat_completions_api": True,
+            "sse_generation_api": True,
             "production_chat_runtime": False,
         },
         "status": "experimental",
