@@ -208,6 +208,7 @@ POST /api/ultra/attention/step
 POST /api/ultra/transformer/step
 POST /api/ultra/graph/run
 POST /api/ultra/generate
+POST /api/ultra/quality
 ~~~
 
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
