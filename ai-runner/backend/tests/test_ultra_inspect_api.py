@@ -19,3 +19,4 @@ async def test_inspect_api_reports_container_preflight(tmp_path: Path, monkeypat
     assert result["codec_counts"] == {"ternary-q05": 1}
     assert result["metadata"]["conversion_quality"]["mse"] == 0.1
     assert result["layout"]["block_count"] == 1
+    assert result["ready_for_experimental_generation"] is False

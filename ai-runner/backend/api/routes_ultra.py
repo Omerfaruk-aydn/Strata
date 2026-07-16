@@ -202,6 +202,12 @@ async def ultra_inspect(model_file: str):
                 codec_counts[record.codec] = codec_counts.get(record.codec, 0) + 1
                 packed_bytes += len(record.payload)
                 scales_bytes += len(record.scales)
+            tensor_names = reader.tensor_names()
+            metadata = reader.manifest.get("metadata", {})
+            layout = discover_layout(tensor_names)
+            has_embedding = any("embed" in name and "weight" in name for name in tensor_names)
+            has_output = any(name.endswith("output.weight") or name.endswith("lm_head.weight") for name in tensor_names)
+            tokenizer_metadata = metadata.get("tokenizer_metadata", {})
             return {
                 "file": path.name,
                 "size_bytes": path.stat().st_size,
@@ -209,8 +215,12 @@ async def ultra_inspect(model_file: str):
                 "codec_counts": codec_counts,
                 "packed_bytes": packed_bytes,
                 "scales_bytes": scales_bytes,
-                "metadata": reader.manifest.get("metadata", {}),
-                "layout": discover_layout(reader.tensor_names()),
+                "metadata": metadata,
+                "layout": layout,
+                "has_embedding": has_embedding,
+                "has_output": has_output,
+                "tokenizer_metadata_present": bool(tokenizer_metadata),
+                "ready_for_experimental_generation": bool(layout["complete_blocks"] and has_embedding and has_output),
             }
     except (OSError, ValueError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
