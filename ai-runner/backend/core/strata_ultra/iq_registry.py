@@ -50,6 +50,15 @@ def get_iq_codec(type_id: int) -> Optional[IQCodec]:
     return BY_TYPE_ID.get(type_id)
 
 
+def source_codec_names(native_bridge: bool = False) -> list[str]:
+    """Return IQ GGUF names that the active converter can actually decode."""
+    return [
+        codec.name
+        for codec in IQ_CODECS
+        if codec.decodable or (native_bridge and codec.type_id in NATIVE_BRIDGE_TYPE_IDS)
+    ]
+
+
 def capability_report(native_bridge: bool = False) -> list[dict]:
     """Return codec capabilities for the active runtime configuration.
 

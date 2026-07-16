@@ -39,7 +39,7 @@ from ..core.strata_ultra import (
     run_codec_benchmark,
 )
 from ..core.strata_ultra.cuda_backend import cuda_available
-from ..core.strata_ultra.iq_registry import capability_report as iq_capability_report
+from ..core.strata_ultra.iq_registry import capability_report as iq_capability_report, source_codec_names
 from ..core.strata_ultra.iq_native import native_iq_available
 from ..models.model_manager import model_manager
 from .auth import require_api_access
@@ -205,9 +205,8 @@ class StrataChatRequest(GenerateRequest):
 @router.get("/capabilities")
 async def capabilities():
     native_iq = native_iq_available()
-    source_codecs = ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "IQ4_NL"]
-    if native_iq:
-        source_codecs.extend(["IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ4_XS"])
+    source_codecs = ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K"]
+    source_codecs.extend(source_codec_names(native_bridge=native_iq))
     iq_codecs = iq_capability_report(native_bridge=native_iq)
     unsupported_iq = [item["name"] for item in iq_codecs if not item["decodable"]]
     cuda = cuda_available()
