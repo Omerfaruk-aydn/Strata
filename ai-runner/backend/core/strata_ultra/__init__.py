@@ -16,6 +16,7 @@ from .executor import StrataRuntime, matmul, matvec
 from .kv_runtime import KVSnapshot, UltraKVCache
 from .graph import LinearNode, StrataGraph
 from .attention import LowBitAttention
+from .layers import LowBitMLP, rms_norm, silu
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -42,4 +43,7 @@ __all__ = [
     "LinearNode",
     "StrataGraph",
     "LowBitAttention",
+    "LowBitMLP",
+    "rms_norm",
+    "silu",
 ]
