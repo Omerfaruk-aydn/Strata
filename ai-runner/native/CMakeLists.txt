@@ -17,13 +17,17 @@ if(STRATA_ENABLE_CUDA)
 endif()
 
 if(STRATA_GGML_ROOT)
+  find_library(STRATA_GGML_LIBRARY
+    NAMES ggml libggml
+    PATHS "${STRATA_GGML_ROOT}/build/src" "${STRATA_GGML_ROOT}/build/src/Release"
+    REQUIRED
+  )
   add_library(strata_iq SHARED iq/strata_iq.cpp)
   target_include_directories(strata_iq PRIVATE
     "${STRATA_GGML_ROOT}/include"
     "${STRATA_GGML_ROOT}/src"
   )
-  target_link_directories(strata_iq PRIVATE "${STRATA_GGML_ROOT}/build/src")
-  target_link_libraries(strata_iq PRIVATE ggml)
+  target_link_libraries(strata_iq PRIVATE "${STRATA_GGML_LIBRARY}")
   set_target_properties(strata_iq PROPERTIES
     CXX_STANDARD 17
     CXX_STANDARD_REQUIRED ON

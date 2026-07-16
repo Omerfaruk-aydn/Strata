@@ -18,7 +18,7 @@ STRATA_IQ_EXPORT int strata_ggml_dequant_iq(
     std::uint32_t type_id,
     const std::uint8_t * raw,
     std::size_t raw_bytes,
-    std::float_t * output,
+    float * output,
     std::int64_t value_count) {
   if (!raw || !output || value_count <= 0) return 1;
   if (value_count % 256 != 0) return 2;

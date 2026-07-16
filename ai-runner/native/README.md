@@ -32,6 +32,13 @@ with `STRATA_IQ_LIBRARY`. The bridge validates type, block size, and element
 count before calling the upstream dequantizer. Without this optional library,
 IQ codecs remain unavailable and are reported as such by the API.
 
+On Windows, the repository helper can be used after installing CMake:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-native-iq.ps1 `
+  -GgmlRoot C:\src\llama.cpp
+```
+
 The GGML checkout and the built `ggml` library must match the GGUF type layout
 used by the model. Strata does not copy or reinterpret upstream codebooks, and
 it does not mark IQ support active until the shared library loads successfully.
