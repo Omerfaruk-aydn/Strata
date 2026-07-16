@@ -20,7 +20,7 @@ from .layers import LowBitMLP, rms_norm, silu
 from .transformer import LowBitTransformer, LowBitTransformerBlock
 from .numpy_backend import matmul_fast, numpy_available
 from .generation import GenerationConfig, StrataGenerator
-from .tokenizer import ByteTokenizer
+from .tokenizer import ByteTokenizer, GGUFTokenizer
 from .sparse_codec import decode_sparse05, encode_sparse05
 from .layout import discover_layout
 from .quality import tensor_quality
@@ -62,6 +62,7 @@ __all__ = [
     "GenerationConfig",
     "StrataGenerator",
     "ByteTokenizer",
+    "GGUFTokenizer",
     "encode_sparse05",
     "decode_sparse05",
     "discover_layout",

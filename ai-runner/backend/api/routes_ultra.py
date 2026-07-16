@@ -21,6 +21,7 @@ from ..core.strata_ultra import (
     LowBitAttention,
     LowBitTransformer,
     LowBitTransformerBlock,
+    GGUFTokenizer,
     GenerationConfig,
     StrataGenerator,
     discover_layout,
@@ -374,6 +375,7 @@ async def generate_text(request: GenerateRequest):
                 with StrataContainerReader(model_path) as reader:
                     tensor_names = set(reader.tensor_names())
                     discovered = discover_layout(list(tensor_names))
+                    tokenizer_metadata = reader.manifest.get("metadata", {}).get("tokenizer_metadata", {})
                 if request.embedding_tensor not in tensor_names:
                     raise ValueError(f"embedding tensor bulunamadı: {request.embedding_tensor}")
                 if request.output_tensor not in tensor_names:
@@ -391,11 +393,19 @@ async def generate_text(request: GenerateRequest):
                     ))
                 if not blocks:
                     raise ValueError("no complete transformer blocks discovered")
+                tokenizer = None
+                tokenizer_name = "byte-fallback"
+                if tokenizer_metadata:
+                    try:
+                        tokenizer = GGUFTokenizer.from_metadata(tokenizer_metadata)
+                        tokenizer_name = "gguf-bpe"
+                    except (ValueError, RuntimeError):
+                        tokenizer = None
                 generator = StrataGenerator(
-                    runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor,
+                    runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor, tokenizer=tokenizer,
                 )
                 text = generator.generate(request.prompt, GenerationConfig(request.max_new_tokens))
-                return {"text": text, "tokenizer": "byte-fallback", "blocks": len(blocks), "backend": runtime.backend}
+                return {"text": text, "tokenizer": tokenizer_name, "blocks": len(blocks), "backend": runtime.backend}
         return await asyncio.to_thread(execute)
     except (ValueError, MemoryError, KeyError, IndexError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
