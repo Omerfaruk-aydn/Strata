@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import math
 import os
 from pathlib import Path
 from typing import Optional
@@ -52,6 +53,11 @@ def matvec_cuda(record, vector: list[float]) -> list[float]:
         raise ValueError("CUDA backend currently accepts only ternary-q05 tensors")
     if len(vector) != record.cols:
         raise ValueError(f"vector length {len(vector)} != tensor columns {record.cols}")
+    if any(not math.isfinite(value) for value in vector):
+        raise ValueError("CUDA matvec vector must contain finite values")
+    packed_bytes = (record.rows * record.cols + 3) // 4
+    if len(record.payload) != packed_bytes:
+        raise ValueError(f"invalid packed payload for tensor {record.name}: {len(record.payload)} != {packed_bytes}")
     library = _load()
     if library is None:
         raise RuntimeError("Strata CUDA backend is not installed; build native/ with STRATA_ENABLE_CUDA=ON")
