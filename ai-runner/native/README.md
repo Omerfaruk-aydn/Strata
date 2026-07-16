@@ -6,6 +6,13 @@ optional, capability-detected components and are never assumed to exist.
 Run `powershell -ExecutionPolicy Bypass -File scripts/check-native-toolchain.ps1`
 before configuring a native build to see which tools are available.
 
+## Windows prerequisites
+
+Install CMake, a C++17 compiler (Visual Studio Build Tools or MinGW), and the
+CUDA Toolkit only when enabling the CUDA backend. For the IQ bridge, also keep
+a matching llama.cpp checkout with its GGML library built. Then run the
+preflight script again before invoking `build-native-iq.ps1`.
+
 ## CUDA
 
 The CUDA backend currently provides a packed `ternary-q05` matrix-vector
