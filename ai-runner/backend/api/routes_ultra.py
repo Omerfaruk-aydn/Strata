@@ -18,6 +18,7 @@ from ..core.strata_ultra import (
     StrataGraph,
     StrataRuntime,
     LinearNode,
+    LowBitAttention,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -80,6 +81,15 @@ class GraphRunRequest(BaseModel):
     vector: List[float] = Field(min_length=1, max_length=1_000_000)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
+
+
+class AttentionStepRequest(BaseModel):
+    width: int = Field(ge=1, le=16_384)
+    capacity_tokens: int = Field(default=2048, ge=1, le=1_000_000)
+    mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    query: List[float] = Field(min_length=1, max_length=16_384)
+    key: List[float] = Field(min_length=1, max_length=16_384)
+    value: List[float] = Field(min_length=1, max_length=16_384)
 
 
 @router.get("/capabilities")
@@ -186,6 +196,18 @@ async def run_graph(request: GraphRunRequest):
                 }}
         return await asyncio.to_thread(execute)
     except (ValueError, MemoryError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/attention/step")
+async def attention_step(request: AttentionStepRequest):
+    if not (len(request.query) == len(request.key) == len(request.value) == request.width):
+        raise HTTPException(status_code=422, detail="query, key ve value width ile aynı uzunlukta olmalıdır.")
+    try:
+        attention = LowBitAttention(request.width, request.capacity_tokens, request.mode)
+        output = attention.step(request.query, request.key, request.value)
+        return {"output": output, "keys": attention.keys.snapshot().__dict__, "values": attention.values.snapshot().__dict__}
+    except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

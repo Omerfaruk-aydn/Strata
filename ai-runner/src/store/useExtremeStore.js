@@ -169,6 +169,29 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  runLowBitAttentionStep: async (width, query, key, value, options = {}) => {
+    try {
+      const res = await apiFetch('/api/ultra/attention/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          width,
+          query,
+          key,
+          value,
+          mode: options.mode || 'sign1',
+          capacity_tokens: options.capacityTokens || 2048,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Low-bit attention failed');
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   fetchPresets: async () => {
     try {
       const res = await apiFetch('/api/extreme/presets');
