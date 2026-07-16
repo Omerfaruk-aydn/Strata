@@ -19,6 +19,33 @@ from .ternary import encode_ternary
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
 GGML_TYPE_F16 = 1
+GGML_TYPE_Q4_0 = 2
+GGML_TYPE_Q8_0 = 8
+_QK = 32
+
+
+def _decode_q4_0(raw: bytes, count: int) -> tuple[float, ...]:
+    if count % _QK or len(raw) != (count // _QK) * 18:
+        raise ValueError("Invalid Q4_0 tensor block size")
+    values = []
+    for offset in range(0, len(raw), 18):
+        scale = struct.unpack_from("<e", raw, offset)[0]
+        packed = raw[offset + 2:offset + 18]
+        for index in range(16):
+            values.append(scale * ((packed[index] & 0x0F) - 8))
+        for index in range(16):
+            values.append(scale * ((packed[index] >> 4) - 8))
+    return tuple(values)
+
+
+def _decode_q8_0(raw: bytes, count: int) -> tuple[float, ...]:
+    if count % _QK or len(raw) != (count // _QK) * 34:
+        raise ValueError("Invalid Q8_0 tensor block size")
+    values = []
+    for offset in range(0, len(raw), 34):
+        scale = struct.unpack_from("<e", raw, offset)[0]
+        values.extend(scale * value for value in struct.unpack_from("<32b", raw, offset + 2))
+    return tuple(values)
 
 
 def _read_string(stream: BinaryIO) -> str:
@@ -72,19 +99,32 @@ def convert_gguf_to_strata(
         })
         converted = 0
         for name, dims, tensor_type, offset in infos:
-            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16}:
-                supported = "F32/F16 only in this converter"
+            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0}:
+                supported = "F32/F16/Q4_0/Q8_0 only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
                 count *= dim
-            item_size = 4 if tensor_type == GGML_TYPE_F32 else 2
-            byte_count = count * item_size
+            if tensor_type == GGML_TYPE_F32:
+                byte_count = count * 4
+            elif tensor_type == GGML_TYPE_F16:
+                byte_count = count * 2
+            elif tensor_type == GGML_TYPE_Q4_0:
+                byte_count = (count // _QK) * 18
+            else:
+                byte_count = (count // _QK) * 34
             if byte_count > max_tensor_bytes or data_start + offset + byte_count > file_size:
                 raise ValueError(f"Tensor {name} exceeds safe input bounds")
             stream.seek(data_start + offset)
             raw = _read_exact(stream, byte_count)
-            values = struct.unpack(f"<{count}{'f' if tensor_type == GGML_TYPE_F32 else 'e'}", raw)
+            if tensor_type == GGML_TYPE_F32:
+                values = struct.unpack(f"<{count}f", raw)
+            elif tensor_type == GGML_TYPE_F16:
+                values = struct.unpack(f"<{count}e", raw)
+            elif tensor_type == GGML_TYPE_Q4_0:
+                values = _decode_q4_0(raw, count)
+            else:
+                values = _decode_q8_0(raw, count)
             packed, scales = encode_ternary(values, group_size)
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
             rows = int(dims[0])
