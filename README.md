@@ -317,7 +317,7 @@ Settings are persisted in SQLite and validated through an allowlist.
 | adaptive_load | true | Retry memory-related load failures with safer settings |
 | adaptive_max_attempts | 6 | Maximum bounded native load attempts |
 | backend_preference | auto | Validate or force the native compute backend |
-| generation_timeout_s | 300 | Maximum generation wall-clock time; `0` disables the guard for controlled benchmarks |
+| generation_timeout_s | 300 | Maximum generation wall-clock time; `0` disables the guard for controlled benchmarks; applied when loading a model |
 | context_compaction_mode | extractive_summary | Compress dropped history or remove oldest messages |
 
 Local runtime data, logs, the SQLite database, model cache, and downloaded models live under %USERPROFILE%\\.ai-runner\\.

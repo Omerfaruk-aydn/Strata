@@ -375,6 +375,7 @@ DEFAULT_SETTINGS = {
     "adaptive_load": True,
     "adaptive_max_attempts": 6,
     "backend_preference": "auto",
+    "generation_timeout_s": 300,
 }
 
 

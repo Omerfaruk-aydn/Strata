@@ -100,6 +100,7 @@ class LoadRequest(BaseModel):
     adaptive_load: Optional[bool] = None
     adaptive_max_attempts: Optional[int] = Field(default=None, ge=1, le=12)
     backend_preference: Optional[Literal["auto", "cuda", "vulkan", "metal", "sycl", "cpu"]] = None
+    generation_timeout_s: Optional[float] = Field(default=None, ge=0.0, le=86_400.0)
 
     @field_validator("tensor_split")
     @classmethod
@@ -379,6 +380,7 @@ async def load_model(model_id: str, request: LoadRequest):
         backend_preference = request.backend_preference or str(
             await session_store.get_setting("backend_preference", "auto")
         )
+        generation_timeout_s = float(await effective("generation_timeout_s", "generation_timeout_s"))
 
         hardware = get_hardware_profile(
             model_dir=model_manager.model_dir,
@@ -480,6 +482,7 @@ async def load_model(model_id: str, request: LoadRequest):
             tensor_split=tensor_split,
             backend_preference=backend_preference,
             context_compaction_mode=context_compaction_mode,
+            generation_timeout_s=generation_timeout_s,
         )
 
         # Load with bounded OOM recovery when enabled. Adaptation happens

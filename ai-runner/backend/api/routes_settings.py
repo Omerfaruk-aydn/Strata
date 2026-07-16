@@ -60,6 +60,7 @@ class SettingsValues(BaseModel):
     adaptive_load: Optional[bool] = None
     adaptive_max_attempts: Optional[int] = Field(default=None, ge=1, le=12)
     backend_preference: Optional[Literal["auto", "cuda", "vulkan", "metal", "sycl", "cpu"]] = None
+    generation_timeout_s: Optional[float] = Field(default=None, ge=0.0, le=86_400.0)
 
     @field_validator("api_host")
     @classmethod
