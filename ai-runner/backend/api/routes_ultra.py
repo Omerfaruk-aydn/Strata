@@ -43,6 +43,7 @@ class MemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     value_count: int = Field(default=4096, ge=1, le=10_000_000_000)
     group_size: int = Field(default=128, ge=8, le=4096)
+    sparse_nonzero_ratio: float = Field(default=0.1, ge=0.0, le=1.0)
 
 
 class BenchmarkRequest(BaseModel):
@@ -228,7 +229,7 @@ async def ultra_inspect(model_file: str):
 
 @router.post("/memory")
 async def memory(request: MemoryRequest):
-    return {"report": kv_memory_report(request.value_count, request.group_size)}
+    return {"report": kv_memory_report(request.value_count, request.group_size, request.sparse_nonzero_ratio)}
 
 
 @router.post("/quality")

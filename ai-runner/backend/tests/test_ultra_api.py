@@ -12,9 +12,10 @@ from backend.api.routes_ultra import (
 
 @pytest.mark.asyncio
 async def test_ultra_memory_and_benchmark_endpoints():
-    memory_result = await memory(MemoryRequest(value_count=1024, group_size=64))
+    memory_result = await memory(MemoryRequest(value_count=1024, group_size=64, sparse_nonzero_ratio=0.25))
     benchmark_result = await benchmark(BenchmarkRequest(value_count=1024, group_size=64))
     assert memory_result["report"]["sign1_bytes"] < memory_result["report"]["f16_bytes"]
+    assert memory_result["report"]["sparse05_nonzero_ratio_assumption"] == 0.25
     assert benchmark_result["benchmark"]["decoded_values"] == 1024
 
 

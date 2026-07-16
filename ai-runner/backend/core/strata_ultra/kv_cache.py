@@ -107,18 +107,19 @@ def estimate_kv_bytes(value_count: int, mode: str, group_size: int = 128, nonzer
     return payload + groups * 4
 
 
-def kv_memory_report(value_count: int, group_size: int = 128) -> dict[str, int | float]:
+def kv_memory_report(value_count: int, group_size: int = 128, sparse_nonzero_ratio: float = 0.1) -> dict[str, int | float]:
     """Compare F16, 1-bit, and experimental 0.5-profile storage."""
     f16 = value_count * 2
     sign1 = estimate_kv_bytes(value_count, "sign1", group_size)
     ternary = estimate_kv_bytes(value_count, "ternary05", group_size)
-    sparse = estimate_kv_bytes(value_count, "sparse05", group_size)
+    sparse = estimate_kv_bytes(value_count, "sparse05", group_size, sparse_nonzero_ratio)
     return {
         "value_count": value_count,
         "f16_bytes": f16,
         "sign1_bytes": sign1,
         "ternary05_bytes": ternary,
         "sparse05_bytes_estimated": sparse,
+        "sparse05_nonzero_ratio_assumption": sparse_nonzero_ratio,
         "sign1_saving_percent": round((1 - sign1 / f16) * 100, 2) if f16 else 0.0,
         "ternary05_saving_percent": round((1 - ternary / f16) * 100, 2) if f16 else 0.0,
     }

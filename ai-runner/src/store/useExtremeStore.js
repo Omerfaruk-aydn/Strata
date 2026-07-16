@@ -78,12 +78,12 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
-  estimateUltraMemory: async (valueCount = 4096, groupSize = 128) => {
+  estimateUltraMemory: async (valueCount = 4096, groupSize = 128, sparseNonzeroRatio = 0.1) => {
     try {
       const res = await apiFetch('/api/ultra/memory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value_count: valueCount, group_size: groupSize }),
+        body: JSON.stringify({ value_count: valueCount, group_size: groupSize, sparse_nonzero_ratio: sparseNonzeroRatio }),
       });
       const data = await res.json();
       set({ ultraMemoryReport: data.report });
