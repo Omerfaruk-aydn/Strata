@@ -6,6 +6,7 @@ format. Conversion and native execution are deliberately separate milestones.
 """
 
 import asyncio
+import importlib.util
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -149,6 +150,7 @@ async def capabilities():
         "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3"],
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
+        "tokenizer_backend": "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback",
         "status": "experimental",
     }
 
