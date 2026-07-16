@@ -3,6 +3,9 @@
 The Python runtime remains the correctness reference. Native backends are
 optional, capability-detected components and are never assumed to exist.
 
+Run `powershell -ExecutionPolicy Bypass -File scripts/check-native-toolchain.ps1`
+before configuring a native build to see which tools are available.
+
 ## CUDA
 
 The CUDA backend currently provides a packed `ternary-q05` matrix-vector
