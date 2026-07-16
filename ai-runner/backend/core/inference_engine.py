@@ -91,6 +91,10 @@ class EngineConfig(BaseModel):
     # zero GPU layers; other explicit values are validated before loading.
     backend_preference: str = "auto"
 
+    # Hard wall-clock guard for a stalled native generation. Zero disables the
+    # guard for controlled offline benchmarking only.
+    generation_timeout_s: float = 300.0
+
     @field_validator("kv_cache_type")
     @classmethod
     def validate_kv_type(cls, v: str) -> str:
@@ -116,6 +120,13 @@ class EngineConfig(BaseModel):
         if normalized not in allowed:
             raise ValueError(f"backend_preference must be one of {sorted(allowed)}")
         return normalized
+
+    @field_validator("generation_timeout_s")
+    @classmethod
+    def validate_generation_timeout(cls, value: float) -> float:
+        if value < 0.0 or value > 86_400.0:
+            raise ValueError("generation_timeout_s must be 0 or between 1 and 86400 seconds")
+        return value
 
 
 class InferenceParams(BaseModel):
@@ -770,7 +781,18 @@ class InferenceEngine:
             producer = loop.run_in_executor(None, produce)
 
             while True:
-                chunk = await queue.get()
+                timeout = None
+                if self._config and self._config.generation_timeout_s > 0:
+                    elapsed = time.perf_counter() - start_time
+                    timeout = max(0.001, self._config.generation_timeout_s - elapsed)
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=timeout)
+                except asyncio.TimeoutError as exc:
+                    self._stop_event.set()
+                    raise TimeoutError(
+                        f"Generation exceeded the configured timeout of "
+                        f"{self._config.generation_timeout_s:.0f} seconds"
+                    ) from exc
                 if chunk is sentinel:
                     break
                 if isinstance(chunk, Exception):
@@ -968,6 +990,7 @@ class InferenceEngine:
             "auto_context_prune":  self._config.auto_context_prune,
             "context_compaction_mode": self._config.context_compaction_mode,
             "backend_preference": self._config.backend_preference,
+            "generation_timeout_s": self._config.generation_timeout_s,
         }
 
 

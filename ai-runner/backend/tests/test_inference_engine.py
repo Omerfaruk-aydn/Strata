@@ -180,6 +180,14 @@ class TestEngineConfig:
         with pytest.raises(ValueError):
             EngineConfig(backend_preference="directml")
 
+    def test_generation_timeout_is_bounded(self):
+        from backend.core.inference_engine import EngineConfig
+
+        assert EngineConfig().generation_timeout_s == 300.0
+        assert EngineConfig(generation_timeout_s=0).generation_timeout_s == 0
+        with pytest.raises(ValueError):
+            EngineConfig(generation_timeout_s=86_401)
+
     def test_draft_model_defaults(self):
         """Draft model should be None by default (speculative decoding off)."""
         from backend.core.inference_engine import EngineConfig
