@@ -229,6 +229,12 @@ The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/b
 
 The complete interactive API reference is available at http://127.0.0.1:8420/docs.
 
+Every push and pull request runs the backend test/coverage gate, dependency
+audit, frontend production build, Tauri Cargo check, and native CMake project
+configuration in GitHub Actions. Native CUDA and GGML IQ binaries remain
+optional matrix builds because they require matching local toolkits and source
+checkouts.
+
 | Group | Endpoints | Purpose |
 |---|---|---|
 | Health | GET /, GET /api/status | Runtime health checks |

@@ -56,6 +56,13 @@ jobs:
           npm audit --audit-level=moderate
           npm run build
 
+      - name: Configure native backend project
+        shell: pwsh
+        run: |
+          cmake -S native -B native/build-ci -DSTRATA_ENABLE_CUDA=OFF
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path native/build-ci/CMakeCache.txt)) { throw 'Native CMake configuration did not produce CMakeCache.txt' }
+
       - name: Check Tauri Rust application
         shell: pwsh
         run: |
