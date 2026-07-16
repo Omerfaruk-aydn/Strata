@@ -204,6 +204,8 @@ Current capabilities:
 
 The Strata executor has a Python/NumPy correctness path, an optional native CUDA ternary matvec backend, and an optional native GGML IQ bridge. A `.strata` file cannot be loaded by the existing llama.cpp inference path. GGUF architectures with tokenizer metadata incompatible with the optional BPE adapter use the explicit byte fallback. IQ4_NL conversion works in Python; IQ1/IQ2/IQ3/IQ4_XS conversion becomes available only when `strata_iq` is built against a matching GGML checkout and exposed through `STRATA_IQ_LIBRARY`. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
 
+IQ3_XS is intentionally not advertised by the native bridge until the matching upstream GGML block and dequantizer ABI are available; unsupported formats remain visible in the capability report instead of being silently reinterpreted.
+
 Useful API calls:
 
 ~~~text
