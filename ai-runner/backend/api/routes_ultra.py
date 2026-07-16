@@ -193,18 +193,19 @@ async def ultra_inspect(model_file: str):
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
         with StrataContainerReader(path) as reader:
-            records = list(reader.read_tensors())
             codec_counts: dict[str, int] = {}
             packed_bytes = 0
             scales_bytes = 0
-            for record in records:
+            tensor_count = 0
+            for record in reader.read_tensors():
+                tensor_count += 1
                 codec_counts[record.codec] = codec_counts.get(record.codec, 0) + 1
                 packed_bytes += len(record.payload)
                 scales_bytes += len(record.scales)
             return {
                 "file": path.name,
                 "size_bytes": path.stat().st_size,
-                "tensor_count": len(records),
+                "tensor_count": tensor_count,
                 "codec_counts": codec_counts,
                 "packed_bytes": packed_bytes,
                 "scales_bytes": scales_bytes,
