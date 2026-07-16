@@ -12,6 +12,7 @@ from .paging import LayerPager, PageEvent
 from .benchmark import run_codec_benchmark
 from .container import StrataContainerReader, StrataContainerWriter, TensorRecord
 from .converter import convert_gguf_to_strata
+from .executor import StrataRuntime, matvec
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -30,4 +31,6 @@ __all__ = [
     "StrataContainerWriter",
     "TensorRecord",
     "convert_gguf_to_strata",
+    "StrataRuntime",
+    "matvec",
 ]
