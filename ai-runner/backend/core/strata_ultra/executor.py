@@ -88,6 +88,14 @@ class StrataRuntime:
                 return matmul_fast(record, matrix)
         return matmul(record, matrix)
 
+    def tensor_row(self, tensor_name: str, row: int) -> list[float]:
+        record = self.pager.get(tensor_name)
+        if row < 0 or row >= record.rows:
+            raise IndexError(f"tensor row {row} outside [0, {record.rows})")
+        values = _tensor_values(record)
+        start = row * record.cols
+        return values[start:start + record.cols]
+
     def close(self) -> None:
         self.pager.clear()
         self.reader.close()

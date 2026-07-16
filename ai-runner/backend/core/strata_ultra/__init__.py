@@ -19,6 +19,8 @@ from .attention import LowBitAttention
 from .layers import LowBitMLP, rms_norm, silu
 from .transformer import LowBitTransformer, LowBitTransformerBlock
 from .numpy_backend import matmul_fast, numpy_available
+from .generation import GenerationConfig, StrataGenerator
+from .tokenizer import ByteTokenizer
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -52,4 +54,7 @@ __all__ = [
     "LowBitTransformer",
     "matmul_fast",
     "numpy_available",
+    "GenerationConfig",
+    "StrataGenerator",
+    "ByteTokenizer",
 ]
