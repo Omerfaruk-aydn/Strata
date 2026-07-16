@@ -18,3 +18,12 @@ def test_ternary_runtime_preserves_zeroes():
     assert values[0] == 0.0
     assert values[1] > 0.0
     assert values[2] < 0.0
+
+
+def test_sparse05_runtime_round_trip():
+    cache = UltraKVCache(width=2, capacity_tokens=2, mode="sparse05", group_size=2)
+    cache.append([0.0, 2.0, -2.0, 0.0])
+    values = cache.values()
+    assert values[0] == 0.0
+    assert values[1] > 0.0
+    assert values[2] < 0.0

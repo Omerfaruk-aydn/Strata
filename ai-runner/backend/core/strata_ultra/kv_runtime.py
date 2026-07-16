@@ -27,8 +27,8 @@ class UltraKVCache:
     def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", group_size: int = 128):
         if width <= 0 or capacity_tokens <= 0:
             raise ValueError("width and capacity_tokens must be positive")
-        if mode not in {"sign1", "ternary05"}:
-            raise ValueError("mode must be 'sign1' or 'ternary05'")
+        if mode not in {"sign1", "ternary05", "sparse05"}:
+            raise ValueError("mode must be 'sign1', 'ternary05' or 'sparse05'")
         self.width = width
         self.capacity_tokens = capacity_tokens
         self.mode = mode

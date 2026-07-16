@@ -95,7 +95,7 @@ class GraphRunRequest(BaseModel):
 class AttentionStepRequest(BaseModel):
     width: int = Field(ge=1, le=16_384)
     capacity_tokens: int = Field(default=2048, ge=1, le=1_000_000)
-    mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05|sparse05)$")
     query: List[float] = Field(min_length=1, max_length=16_384)
     key: List[float] = Field(min_length=1, max_length=16_384)
     value: List[float] = Field(min_length=1, max_length=16_384)
@@ -111,7 +111,7 @@ class TransformerStepRequest(BaseModel):
     block_prefixes: List[str] = Field(min_length=1, max_length=1024)
     width: int = Field(ge=1, le=16_384)
     context_capacity: int = Field(default=2048, ge=1, le=1_000_000)
-    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05|sparse05)$")
     hidden: List[float] = Field(min_length=1, max_length=16_384)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
@@ -125,7 +125,7 @@ class GenerateRequest(BaseModel):
     output_tensor: str = Field(min_length=1, max_length=1024)
     width: int = Field(ge=1, le=16_384)
     context_capacity: int = Field(default=2048, ge=1, le=1_000_000)
-    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05|sparse05)$")
     prompt: str = Field(default="", max_length=100_000)
     max_new_tokens: int = Field(default=16, ge=1, le=1024)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
@@ -141,7 +141,7 @@ async def capabilities():
         "weight_codecs": ["ternary-q05", "sparse05"],
         "source_gguf_codecs": ["F32", "F16", "Q4_0", "Q8_0", "Q4_K", "Q5_K", "Q6_K"],
         "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3", "Q2_K", "Q3_K"],
-        "kv_cache_modes": ["sign1", "ternary05"],
+        "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "status": "experimental",
     }

@@ -21,3 +21,15 @@ def test_ultra_cache_is_smaller_than_f16():
     report = kv_memory_report(4096)
     assert report["sign1_bytes"] < report["f16_bytes"]
     assert report["ternary05_bytes"] < report["f16_bytes"]
+    assert report["sparse05_bytes_estimated"] < report["f16_bytes"]
+
+
+def test_sparse05_cache_round_trip_is_lossy_but_sub_bit_friendly():
+    values = [0.0, 0.0, 2.0, -3.0, 0.01, 0.0, 4.0, 0.0]
+    cache = encode_kv(values, mode="sparse05", group_size=4)
+    decoded = decode_kv(cache)
+    assert len(decoded) == len(values)
+    assert decoded[0] == 0.0
+    assert decoded[2] > 0.0
+    assert decoded[3] < 0.0
+    assert cache.payload_bytes < len(values) * 2
