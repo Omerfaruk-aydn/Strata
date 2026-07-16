@@ -84,6 +84,8 @@ class StrataGenerator:
             self.transformer.step(self._embedding_row(token))
         current = tokens[-1]
         generated = 0
+        previous_text = ""
+        stream_tokens: list[int] = []
         for _ in range(config.max_new_tokens):
             if config.cancel_event is not None and config.cancel_event.is_set():
                 yield {"finish_reason": "cancelled", "generated_tokens": generated}
@@ -93,9 +95,13 @@ class StrataGenerator:
             current = max(range(len(logits)), key=logits.__getitem__)
             generated += 1
             stopped = current == config.eos_token or current in config.stop_token_ids
+            stream_tokens.append(current)
+            decoded = self.tokenizer.decode(stream_tokens)
+            delta = decoded[len(previous_text):] if decoded.startswith(previous_text) else decoded
+            previous_text = decoded
             yield {
                 "token_id": current,
-                "text": self.tokenizer.decode([current]),
+                "text": delta,
                 "generated_tokens": generated,
             }
             if stopped:

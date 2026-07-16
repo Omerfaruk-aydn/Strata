@@ -72,6 +72,6 @@ def test_generation_stream_yields_token_events_and_terminal_reason():
 
     assert events == [
         {"token_id": 1, "text": "1", "generated_tokens": 1},
-        {"token_id": 1, "text": "1", "generated_tokens": 2},
+        {"token_id": 1, "text": "|1", "generated_tokens": 2},
         {"finish_reason": "length", "generated_tokens": 2},
     ]
