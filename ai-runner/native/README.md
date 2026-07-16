@@ -39,6 +39,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build-native-iq.ps1 `
   -GgmlRoot C:\src\llama.cpp
 ```
 
+If the GGML library is in a non-standard location, pass it explicitly with
+`-GgmlLibrary C:\src\llama.cpp\build\src\Release\ggml-base.lib`.
+
 The GGML checkout and the built `ggml` library must match the GGUF type layout
 used by the model. Strata does not copy or reinterpret upstream codebooks, and
 it does not mark IQ support active until the shared library loads successfully.

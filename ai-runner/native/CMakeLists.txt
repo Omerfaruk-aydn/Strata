@@ -3,6 +3,7 @@ project(strata_native LANGUAGES CXX)
 
 option(STRATA_ENABLE_CUDA "Build the CUDA Strata backend" OFF)
 set(STRATA_GGML_ROOT "" CACHE PATH "Path to a llama.cpp ggml source checkout")
+set(STRATA_GGML_LIBRARY "" CACHE FILEPATH "Explicit path to the GGML library for the IQ bridge")
 
 if(STRATA_ENABLE_CUDA)
   enable_language(CUDA)
@@ -17,11 +18,20 @@ if(STRATA_ENABLE_CUDA)
 endif()
 
 if(STRATA_GGML_ROOT)
-  find_library(STRATA_GGML_LIBRARY
-    NAMES ggml libggml
-    PATHS "${STRATA_GGML_ROOT}/build/src" "${STRATA_GGML_ROOT}/build/src/Release"
-    REQUIRED
-  )
+  if(NOT STRATA_GGML_LIBRARY)
+    find_library(STRATA_GGML_LIBRARY
+      NAMES ggml ggml-base libggml libggml-base
+      PATHS
+        "${STRATA_GGML_ROOT}/build/src"
+        "${STRATA_GGML_ROOT}/build/src/Release"
+        "${STRATA_GGML_ROOT}/build/bin"
+        "${STRATA_GGML_ROOT}/build/bin/Release"
+      REQUIRED
+    )
+  endif()
+  if(NOT EXISTS "${STRATA_GGML_LIBRARY}")
+    message(FATAL_ERROR "STRATA_GGML_LIBRARY does not exist: ${STRATA_GGML_LIBRARY}")
+  endif()
   add_library(strata_iq SHARED iq/strata_iq.cpp)
   target_include_directories(strata_iq PRIVATE
     "${STRATA_GGML_ROOT}/include"
