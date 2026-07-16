@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..core.strata_ultra import (
     StrataContainerReader,
+    StrataGraph,
     StrataRuntime,
+    LinearNode,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -65,6 +67,19 @@ class MatvecRequest(BaseModel):
 
 class RuntimeBenchmarkRequest(MatvecRequest):
     iterations: int = Field(default=10, ge=1, le=10_000)
+
+
+class GraphNodeRequest(BaseModel):
+    tensor_name: str = Field(min_length=1, max_length=1024)
+    activation: str = Field(default="none", pattern=r"^(none|relu)$")
+
+
+class GraphRunRequest(BaseModel):
+    model_file: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._-]+\.strata$")
+    nodes: List[GraphNodeRequest] = Field(min_length=1, max_length=10_000)
+    vector: List[float] = Field(min_length=1, max_length=1_000_000)
+    memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
+    resident_window: int = Field(default=2, ge=1, le=1024)
 
 
 @router.get("/capabilities")
@@ -149,6 +164,27 @@ async def runtime_benchmark(request: RuntimeBenchmarkRequest):
                     },
                 }
         return {"benchmark": await asyncio.to_thread(execute)}
+    except (ValueError, MemoryError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/graph/run")
+async def run_graph(request: GraphRunRequest):
+    root = Path(model_manager.model_dir).resolve()
+    model_path = (root / request.model_file).resolve()
+    if model_path.parent != root or not model_path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        def execute():
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+                graph = StrataGraph(runtime, [LinearNode(node.tensor_name, node.activation) for node in request.nodes])
+                result = graph.run(request.vector)
+                return {"values": result, "nodes": len(request.nodes), "pager": {
+                    "resident_pages": runtime.pager.resident_pages,
+                    "resident_bytes": runtime.pager.resident_bytes,
+                    "events": len(runtime.pager.events),
+                }}
+        return await asyncio.to_thread(execute)
     except (ValueError, MemoryError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
