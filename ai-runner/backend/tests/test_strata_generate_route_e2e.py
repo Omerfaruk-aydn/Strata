@@ -53,3 +53,23 @@ async def test_generate_route_runs_real_container_and_returns_metadata(tmp_path,
     assert chat_response["object"] == "chat.completion"
     assert chat_response["choices"][0]["message"]["role"] == "assistant"
     assert chat_response["usage"]["completion_tokens"] == 1
+
+    stream_response = await routes_ultra.strata_chat_completions(routes_ultra.StrataChatRequest(
+        model_file=target.name,
+        block_prefixes=["blk.0"],
+        embedding_tensor="embedding",
+        output_tensor="output",
+        width=1,
+        messages=[{"role": "user", "content": "Hello"}],
+        max_new_tokens=1,
+        backend="python",
+        stream=True,
+    ))
+    chunks = []
+    async for chunk in stream_response.body_iterator:
+        chunks.append(chunk)
+
+    assert '"role": "assistant"' in chunks[0]
+    assert '"content":' in chunks[1]
+    assert '"finish_reason": "length"' in chunks[2]
+    assert chunks[-1] == "data: [DONE]\n\n"
