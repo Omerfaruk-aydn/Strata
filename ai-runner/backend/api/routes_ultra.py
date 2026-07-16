@@ -5,12 +5,14 @@ that a standard GGUF file has already been converted to the experimental
 format. Conversion and native execution are deliberately separate milestones.
 """
 
-from typing import List
+from pathlib import Path
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..core.strata_ultra import kv_memory_report, run_codec_benchmark
+from ..core.strata_ultra import convert_gguf_to_strata, kv_memory_report, run_codec_benchmark
+from ..models.model_manager import model_manager
 from .auth import require_api_access
 
 router = APIRouter(
@@ -37,6 +39,12 @@ class PagingPlanRequest(BaseModel):
     layer_sizes_bytes: List[int] = Field(min_length=1, max_length=100_000)
     memory_budget_bytes: int = Field(ge=1)
     resident_window: int = Field(default=2, ge=1, le=100_000)
+
+
+class ConvertRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_name: Optional[str] = Field(default=None, max_length=255, pattern=r"^[A-Za-z0-9._-]+$")
+    group_size: int = Field(default=128, ge=8, le=4096)
 
 
 @router.get("/capabilities")
@@ -88,3 +96,34 @@ async def paging_plan(request: PagingPlanRequest):
         "memory_budget_bytes": request.memory_budget_bytes,
         "paging_required": len(resident) < len(request.layer_sizes_bytes),
     }
+
+
+@router.post("/convert/{model_id:path}")
+async def convert_model(model_id: str, request: ConvertRequest):
+    """Convert a local GGUF model into a sibling .strata file."""
+    candidates = [model for model in model_manager.get_local_models() if model.id == model_id]
+    if not candidates:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Yerel model bulunamadı.")
+    model = candidates[0]
+    source = Path(model.local_path).resolve()
+    root = Path(model_manager.model_dir).resolve()
+    if root not in source.parents or source.suffix.lower() != ".gguf":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Model yolu güvenli bir GGUF dosyası değil.")
+    target_name = request.target_name or f"{source.stem}-STRATA-Q0.5.strata"
+    target = (root / target_name).resolve()
+    if target.parent != root or target.suffix.lower() != ".strata":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="Çıktı yalnızca model klasöründeki .strata dosyası olabilir.")
+    if target.exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Strata çıktı dosyası zaten mevcut.")
+    try:
+        result = await __import__("asyncio").to_thread(
+            convert_gguf_to_strata, source, target, group_size=request.group_size
+        )
+        return {"conversion": result}
+    except Exception as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

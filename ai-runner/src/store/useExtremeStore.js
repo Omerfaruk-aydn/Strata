@@ -73,6 +73,22 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  convertToStrata: async (modelId, targetName = null, groupSize = 128) => {
+    try {
+      const res = await apiFetch(`/api/ultra/convert/${encodeURIComponent(modelId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_name: targetName, group_size: groupSize }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata conversion failed');
+      return data.conversion;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   fetchPresets: async () => {
     try {
       const res = await apiFetch('/api/extreme/presets');
