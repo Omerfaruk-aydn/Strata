@@ -20,3 +20,5 @@ async def test_runtime_benchmark_reports_iterations(tmp_path: Path, monkeypatch)
     assert result["benchmark"]["iterations"] == 3
     assert result["benchmark"]["output_length"] == 1
     assert result["benchmark"]["average_time_ms"] >= 0
+    assert result["benchmark"]["tensor_codec"] == "ternary-q05"
+    assert result["benchmark"]["execution_path"] == "numpy-or-fallback"

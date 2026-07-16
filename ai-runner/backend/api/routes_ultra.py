@@ -229,6 +229,8 @@ async def runtime_benchmark(request: RuntimeBenchmarkRequest):
                 return {
                     "iterations": request.iterations,
                     "output_length": len(result or []),
+                    "execution_path": "python-streaming" if request.backend == "python" else "numpy-or-fallback",
+                    "tensor_codec": runtime.pager.get(request.tensor_name).codec,
                     "total_time_ms": round(elapsed_ms, 3),
                     "average_time_ms": round(elapsed_ms / request.iterations, 3),
                     "pager": {
