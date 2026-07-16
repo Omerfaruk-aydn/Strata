@@ -17,6 +17,7 @@ from .kv_runtime import KVSnapshot, UltraKVCache
 from .graph import LinearNode, StrataGraph
 from .attention import LowBitAttention
 from .layers import LowBitMLP, rms_norm, silu
+from .transformer import LowBitTransformerBlock
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -46,4 +47,5 @@ __all__ = [
     "LowBitMLP",
     "rms_norm",
     "silu",
+    "LowBitTransformerBlock",
 ]
