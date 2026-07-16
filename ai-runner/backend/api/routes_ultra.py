@@ -7,8 +7,11 @@ format. Conversion and native execution are deliberately separate milestones.
 
 import asyncio
 import importlib.util
+import json
+import queue
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional
 
@@ -48,6 +51,43 @@ router = APIRouter(
 
 _strata_generation_state_lock = threading.Lock()
 _strata_generation_cancel: threading.Event | None = None
+
+
+@contextmanager
+def _strata_generator_context(request: "GenerateRequest", cancel_event: threading.Event):
+    root = Path(model_manager.model_dir).resolve()
+    model_path = (root / request.model_file).resolve()
+    if model_path.parent != root or not model_path.is_file():
+        raise FileNotFoundError("Strata model dosyası bulunamadı.")
+    with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
+        with StrataContainerReader(model_path) as reader:
+            tensor_names = set(reader.tensor_names())
+            discovered = discover_layout(list(tensor_names))
+            tokenizer_metadata = reader.manifest.get("metadata", {}).get("tokenizer_metadata", {})
+        if request.embedding_tensor not in tensor_names or request.output_tensor not in tensor_names:
+            raise ValueError("embedding veya output tensor bulunamadı")
+        prefixes = list(request.block_prefixes) or [item["prefix"] for item in discovered["blocks"] if item["complete"]]
+        blocks = []
+        for prefix in prefixes:
+            names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
+            blocks.append(LowBitTransformerBlock(
+                runtime, q_proj=names["q"], k_proj=names["k"], v_proj=names["v"], o_proj=names["o"],
+                gate_proj=names["gate"], up_proj=names["up"], down_proj=names["down"], width=request.width,
+                context_capacity=request.context_capacity, kv_mode=request.kv_mode,
+            ))
+        if not blocks:
+            raise ValueError("no complete transformer blocks discovered")
+        tokenizer = None
+        tokenizer_name = "byte-fallback"
+        if tokenizer_metadata:
+            try:
+                tokenizer = GGUFTokenizer.from_metadata(tokenizer_metadata)
+                tokenizer_name = "gguf-bpe"
+            except (ValueError, RuntimeError):
+                pass
+        yield StrataGenerator(
+            runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor, tokenizer=tokenizer,
+        ), tokenizer_name, len(blocks), runtime.backend
 
 
 class MemoryRequest(BaseModel):
@@ -534,6 +574,62 @@ async def strata_chat_completions(request: StrataChatRequest):
             "backend": completion["backend"],
         },
     }
+
+
+@router.post("/generate/stream")
+async def strata_generate_stream(request: GenerateRequest):
+    """Stream Strata token events as server-sent events."""
+    global _strata_generation_cancel
+    cancel_event = threading.Event()
+    with _strata_generation_state_lock:
+        if _strata_generation_cancel is not None:
+            raise HTTPException(status_code=409, detail="Başka bir Strata generation devam ediyor")
+        _strata_generation_cancel = cancel_event
+    events: queue.Queue[dict | None] = queue.Queue()
+
+    def worker() -> None:
+        try:
+            with _strata_generator_context(request, cancel_event) as (generator, tokenizer, blocks, backend):
+                for event in generator.generate_stream(
+                    request.prompt,
+                    GenerationConfig(
+                        request.max_new_tokens,
+                        stop_token_ids=tuple(request.stop_token_ids),
+                        cancel_event=cancel_event,
+                    ),
+                ):
+                    events.put({**event, "tokenizer": tokenizer, "blocks": blocks, "backend": backend})
+        except Exception as exc:
+            events.put({"error": str(exc)[:500]})
+        finally:
+            events.put(None)
+
+    task = asyncio.create_task(asyncio.to_thread(worker))
+
+    async def body():
+        global _strata_generation_cancel
+        started = time.monotonic()
+        try:
+            while True:
+                if request.timeout_s and time.monotonic() - started > request.timeout_s:
+                    cancel_event.set()
+                    yield f"data: {json.dumps({'finish_reason': 'timeout'})}\n\n"
+                    break
+                event = await asyncio.to_thread(events.get)
+                if event is None:
+                    break
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            cancel_event.set()
+            raise
+        finally:
+            cancel_event.set()
+            with _strata_generation_state_lock:
+                if _strata_generation_cancel is cancel_event:
+                    _strata_generation_cancel = None
+            await task
+
+    return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
 
 @router.post("/benchmark")
