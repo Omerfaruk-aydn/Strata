@@ -15,6 +15,7 @@ from .converter import convert_gguf_to_strata
 from .executor import StrataRuntime, matmul, matvec
 from .kv_runtime import KVSnapshot, UltraKVCache
 from .graph import LinearNode, StrataGraph
+from .attention import LowBitAttention
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -40,4 +41,5 @@ __all__ = [
     "UltraKVCache",
     "LinearNode",
     "StrataGraph",
+    "LowBitAttention",
 ]
