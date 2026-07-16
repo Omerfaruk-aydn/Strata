@@ -188,6 +188,8 @@ Current capabilities:
 - Experimental `STRATA-Q0.5` ternary tensor packing with per-group scales.
 - GGUF conversion for F32, F16, Q4_0, and Q8_0 source tensors.
 - Independent reference CPU executor with on-the-fly dequantization.
+- Pager-backed linear graphs, low-bit attention, SwiGLU MLP layers, and multi-block transformer execution.
+- Automatic `python`/`numpy` execution backend selection with a correctness fallback.
 - LRU layer paging with a hard byte budget.
 - Runtime-managed `sign1` KV cache and experimental `ternary05` cache with sliding-window eviction.
 - API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
@@ -201,6 +203,9 @@ POST /api/ultra/memory
 POST /api/ultra/benchmark
 POST /api/ultra/paging-plan
 POST /api/ultra/convert/{model_id}
+POST /api/ultra/attention/step
+POST /api/ultra/transformer/step
+POST /api/ultra/graph/run
 ~~~
 
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
