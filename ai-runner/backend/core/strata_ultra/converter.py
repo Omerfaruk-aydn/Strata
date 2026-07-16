@@ -1,6 +1,6 @@
-"""GGUF-to-Strata conversion for lossless-to-source F32 tensors.
+"""GGUF-to-Strata conversion for F32/F16 source tensors.
 
-The converter intentionally supports F32 first.  GGUF quantized block formats
+The converter intentionally supports floating-point tensors first.  GGUF quantized block formats
 must be decoded with architecture/type-specific kernels before requantization;
 silently treating those bytes as floats would create a corrupt model.
 """
@@ -72,18 +72,19 @@ def convert_gguf_to_strata(
         })
         converted = 0
         for name, dims, tensor_type, offset in infos:
-            if tensor_type != GGML_TYPE_F32:
-                supported = "F32 only in this converter"
+            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16}:
+                supported = "F32/F16 only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
                 count *= dim
-            byte_count = count * 4
+            item_size = 4 if tensor_type == GGML_TYPE_F32 else 2
+            byte_count = count * item_size
             if byte_count > max_tensor_bytes or data_start + offset + byte_count > file_size:
                 raise ValueError(f"Tensor {name} exceeds safe input bounds")
             stream.seek(data_start + offset)
             raw = _read_exact(stream, byte_count)
-            values = struct.unpack(f"<{count}f", raw)
+            values = struct.unpack(f"<{count}{'f' if tensor_type == GGML_TYPE_F32 else 'e'}", raw)
             packed, scales = encode_ternary(values, group_size)
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
             rows = int(dims[0])
