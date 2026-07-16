@@ -26,6 +26,8 @@ from ..core.strata_ultra import (
     GGUFTokenizer,
     GenerationConfig,
     StrataGenerator,
+    StrataChatMessage,
+    format_chat_prompt,
     discover_layout,
     tensor_quality,
     convert_gguf_to_strata,
@@ -147,6 +149,16 @@ class GenerateRequest(BaseModel):
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
     backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
+
+
+class StrataChatMessageRequest(BaseModel):
+    role: str = Field(pattern=r"^(system|user|assistant)$")
+    content: str = Field(min_length=1, max_length=100_000)
+
+
+class StrataChatRequest(GenerateRequest):
+    messages: List[StrataChatMessageRequest] = Field(min_length=1, max_length=100_000)
+    stream: bool = False
 
 
 @router.get("/capabilities")
@@ -481,6 +493,47 @@ async def stop_generate_text():
         return {"status": "idle"}
     active.set()
     return {"status": "stopping"}
+
+
+@router.post("/chat/completions")
+async def strata_chat_completions(request: StrataChatRequest):
+    """OpenAI-shaped non-streaming chat adapter for the Strata generator."""
+    if request.stream:
+        raise HTTPException(status_code=501, detail="Strata chat streaming henüz desteklenmiyor")
+    try:
+        prompt = format_chat_prompt([
+            StrataChatMessage(message.role, message.content)
+            for message in request.messages
+        ])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    generation_values = request.model_dump(exclude={"messages", "stream"})
+    generation_values["prompt"] = prompt
+    generation_request = GenerateRequest(**generation_values)
+    completion = await generate_text(generation_request)
+    generated_text = completion["text"]
+    if isinstance(generated_text, str) and generated_text.startswith(prompt):
+        generated_text = generated_text[len(prompt):]
+    return {
+        "id": f"strata-{int(time.time() * 1000)}",
+        "object": "chat.completion",
+        "model": request.model_file,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": generated_text},
+            "finish_reason": completion["finish_reason"],
+        }],
+        "usage": {
+            "prompt_tokens": len(prompt),
+            "completion_tokens": completion["generated_tokens"],
+            "total_tokens": len(prompt) + completion["generated_tokens"],
+        },
+        "strata": {
+            "tokenizer": completion["tokenizer"],
+            "blocks": completion["blocks"],
+            "backend": completion["backend"],
+        },
+    }
 
 
 @router.post("/benchmark")
