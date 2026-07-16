@@ -60,10 +60,13 @@ class UltraKVCache:
     def values(self) -> list[float]:
         if not self._cache:
             return []
-        if self.backend in {"auto", "cuda"} and self.mode in {"sign1", "ternary05"}:
-            from .cuda_backend import cuda_available, decode_kv_cuda
+        if self.backend in {"auto", "cuda"}:
+            from .cuda_backend import cuda_available, decode_kv_cuda, decode_sparse_kv_cuda
             if self.backend == "cuda" or cuda_available():
-                return decode_kv_cuda(self._cache)
+                if self.mode == "sparse05":
+                    return decode_sparse_kv_cuda(self._cache)
+                if self.mode in {"sign1", "ternary05"}:
+                    return decode_kv_cuda(self._cache)
         return decode_kv(self._cache)
 
     def snapshot(self) -> KVSnapshot:

@@ -34,6 +34,40 @@ __global__ void kv_decode_kernel(
   }
 }
 
+__global__ void sparse_kv_decode_kernel(
+    const std::uint8_t* packed,
+    const std::uint32_t* group_offsets,
+    const float* scales,
+    float* output,
+    std::uint32_t count,
+    std::uint32_t group_size,
+    std::uint32_t groups,
+    std::uint32_t payload_bytes,
+    int* error) {
+  const std::uint32_t group = blockIdx.x * blockDim.x + threadIdx.x;
+  if (group >= groups) return;
+  std::uint32_t offset = group_offsets[group];
+  if (offset + 2 > payload_bytes) { atomicExch(error, 1); return; }
+  const std::uint32_t nonzero = packed[offset] | (packed[offset + 1] << 8);
+  offset += 2;
+  const std::uint32_t start = group * group_size;
+  const std::uint32_t width = min(group_size, count - start);
+  std::uint32_t position = 0;
+  for (std::uint32_t item = 0; item < nonzero; ++item) {
+    std::uint32_t encoded = 0, shift = 0;
+    while (true) {
+      if (offset >= payload_bytes || shift > 35) { atomicExch(error, 1); return; }
+      const std::uint8_t byte = packed[offset++];
+      encoded |= static_cast<std::uint32_t>(byte & 127) << shift;
+      if ((byte & 128) == 0) break;
+      shift += 7;
+    }
+    position += (encoded >> 1) + 1;
+    if (position > width) { atomicExch(error, 1); return; }
+    output[start + position - 1] = (encoded & 1) ? scales[group] : -scales[group];
+  }
+}
+
 __global__ void ternary_matvec_kernel(
     const std::uint8_t* packed,
     const float* scales,
@@ -148,5 +182,53 @@ cleanup:
   cudaFree(d_packed);
   cudaFree(d_scales);
   cudaFree(d_output);
+  return static_cast<int>(status);
+}
+
+STRATA_EXPORT int strata_cuda_sparse_kv_decode(
+    const std::uint8_t* packed,
+    const std::uint32_t* group_offsets,
+    const float* scales,
+    float* output,
+    std::uint32_t count,
+    std::uint32_t group_size,
+    std::uint32_t groups,
+    std::uint32_t payload_bytes) {
+  if (!packed || !group_offsets || !scales || !output || count == 0 || group_size == 0 || groups == 0 || payload_bytes == 0) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  std::uint8_t* d_packed = nullptr;
+  std::uint32_t* d_offsets = nullptr;
+  float *d_scales = nullptr, *d_output = nullptr;
+  int* d_error = nullptr;
+  int error = 0;
+  cudaError_t status = cudaMalloc(&d_packed, payload_bytes);
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMalloc(&d_offsets, static_cast<std::size_t>(groups) * sizeof(std::uint32_t));
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMalloc(&d_scales, static_cast<std::size_t>(groups) * sizeof(float));
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMalloc(&d_output, static_cast<std::size_t>(count) * sizeof(float));
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMalloc(&d_error, sizeof(int));
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMemcpy(d_packed, packed, payload_bytes, cudaMemcpyHostToDevice);
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMemcpy(d_offsets, group_offsets, static_cast<std::size_t>(groups) * sizeof(std::uint32_t), cudaMemcpyHostToDevice);
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMemcpy(d_scales, scales, static_cast<std::size_t>(groups) * sizeof(float), cudaMemcpyHostToDevice);
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMemset(d_output, 0, static_cast<std::size_t>(count) * sizeof(float));
+  if (status != cudaSuccess) goto cleanup;
+  status = cudaMemset(d_error, 0, sizeof(int));
+  if (status != cudaSuccess) goto cleanup;
+  sparse_kv_decode_kernel<<<(groups + 255) / 256, 256>>>(d_packed, d_offsets, d_scales, d_output, count, group_size, groups, payload_bytes, d_error);
+  status = cudaGetLastError();
+  if (status == cudaSuccess) status = cudaDeviceSynchronize();
+  if (status == cudaSuccess) status = cudaMemcpy(&error, d_error, sizeof(int), cudaMemcpyDeviceToHost);
+  if (status == cudaSuccess && error != 0) status = cudaErrorInvalidValue;
+  if (status == cudaSuccess) status = cudaMemcpy(output, d_output, static_cast<std::size_t>(count) * sizeof(float), cudaMemcpyDeviceToHost);
+cleanup:
+  cudaFree(d_packed); cudaFree(d_offsets); cudaFree(d_scales); cudaFree(d_output); cudaFree(d_error);
   return static_cast<int>(status);
 }

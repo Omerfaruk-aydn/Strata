@@ -132,3 +132,30 @@ def decode_kv_cuda(cache) -> list[float]:
     if status != 0:
         raise RuntimeError(f"Strata CUDA KV decode failed with CUDA error code {status}")
     return list(output)
+
+
+def decode_sparse_kv_cuda(cache) -> list[float]:
+    """Decode a validated sparse05 KV cache through the native CUDA ABI."""
+    if cache.mode != "sparse05":
+        raise ValueError("CUDA sparse KV decode requires sparse05 mode")
+    from .sparse_codec import sparse05_group_offsets
+    offsets = sparse05_group_offsets(cache.payload, cache.count, cache.group_size)
+    groups = len(offsets)
+    if len(cache.scales) != groups:
+        raise ValueError(f"invalid sparse CUDA scale count: {len(cache.scales)} != {groups}")
+    library = _load()
+    if library is None:
+        raise RuntimeError("Strata CUDA backend is not installed; build native/ with STRATA_ENABLE_CUDA=ON")
+    function = getattr(library, "strata_cuda_sparse_kv_decode", None)
+    if function is None:
+        raise RuntimeError("installed Strata CUDA backend does not support sparse05 KV decode")
+    function.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float), ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32]
+    function.restype = ctypes.c_int
+    packed = (ctypes.c_uint8 * len(cache.payload)).from_buffer_copy(cache.payload)
+    offsets_c = (ctypes.c_uint32 * groups)(*offsets)
+    scales = (ctypes.c_float * groups)(*cache.scales)
+    output = (ctypes.c_float * cache.count)()
+    status = function(packed, offsets_c, scales, output, cache.count, cache.group_size, groups, len(cache.payload))
+    if status != 0:
+        raise RuntimeError(f"Strata CUDA sparse KV decode failed with CUDA error code {status}")
+    return list(output)

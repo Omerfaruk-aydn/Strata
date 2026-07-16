@@ -73,3 +73,28 @@ def decode_sparse05(payload: bytes, scales: Sequence[float], count: int, group_s
     if offset != len(payload):
         raise ValueError("trailing sparse05 payload bytes")
     return output
+
+
+def sparse05_group_offsets(payload: bytes, count: int, group_size: int = 128) -> tuple[int, ...]:
+    """Return validated byte offsets for each sparse05 group."""
+    if count <= 0 or group_size <= 0:
+        raise ValueError("count and group_size must be valid")
+    groups = (count + group_size - 1) // group_size
+    offsets: list[int] = []
+    offset = 0
+    for group_index in range(groups):
+        offsets.append(offset)
+        if offset + 2 > len(payload):
+            raise ValueError("truncated sparse05 group")
+        nonzero = struct.unpack_from("<H", payload, offset)[0]
+        offset += 2
+        position = -1
+        width = min(group_size, count - group_index * group_size)
+        for _ in range(nonzero):
+            encoded, offset = _get_varint(payload, offset)
+            position += (encoded >> 1) + 1
+            if position >= width:
+                raise ValueError("sparse05 position outside group")
+    if offset != len(payload):
+        raise ValueError("trailing sparse05 payload bytes")
+    return tuple(offsets)
