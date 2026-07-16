@@ -65,3 +65,24 @@ async def test_strata_generate_stream_emits_events_and_cleans_state(monkeypatch)
     assert '"token_id": 7' in events[0]
     assert '"finish_reason": "length"' in events[1]
     assert routes_ultra._strata_generation_cancel is None
+
+
+@pytest.mark.asyncio
+async def test_strata_generate_stream_times_out_while_worker_is_silent(monkeypatch):
+    class SilentGenerator:
+        def generate_stream(self, prompt, config):
+            config.cancel_event.wait(2)
+            yield {"finish_reason": "cancelled", "generated_tokens": 0}
+
+    @contextmanager
+    def fake_context(request, cancel_event):
+        yield SilentGenerator(), "byte-fallback", 1, "python"
+
+    monkeypatch.setattr(routes_ultra, "_strata_generator_context", fake_context)
+    response = await routes_ultra.strata_generate_stream(_request(timeout_s=0.01))
+    events = []
+    async for chunk in response.body_iterator:
+        events.append(chunk)
+
+    assert '"finish_reason": "timeout"' in events[0]
+    assert routes_ultra._strata_generation_cancel is None

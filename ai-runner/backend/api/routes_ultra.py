@@ -612,11 +612,19 @@ async def strata_generate_stream(request: GenerateRequest):
         started = time.monotonic()
         try:
             while True:
-                if request.timeout_s and time.monotonic() - started > request.timeout_s:
+                remaining = None
+                if request.timeout_s:
+                    remaining = request.timeout_s - (time.monotonic() - started)
+                    if remaining <= 0:
+                        cancel_event.set()
+                        yield f"data: {json.dumps({'finish_reason': 'timeout'})}\n\n"
+                        break
+                try:
+                    event = await asyncio.wait_for(asyncio.to_thread(events.get), timeout=remaining)
+                except asyncio.TimeoutError:
                     cancel_event.set()
                     yield f"data: {json.dumps({'finish_reason': 'timeout'})}\n\n"
                     break
-                event = await asyncio.to_thread(events.get)
                 if event is None:
                     break
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
