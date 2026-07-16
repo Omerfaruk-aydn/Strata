@@ -36,13 +36,15 @@ def _validate(values: Sequence[float], group_size: int) -> None:
         raise ValueError("group_size must be positive")
 
 
-def encode_kv(values: Sequence[float], mode: str = "sign1", group_size: int = 128) -> PackedKV:
+def encode_kv(values: Sequence[float], mode: str = "sign1", group_size: int = 128, sparse_threshold: float = 0.125) -> PackedKV:
     """Pack a flat KV tensor into the requested ultra-low-bit representation."""
     _validate(values, group_size)
+    if sparse_threshold < 0:
+        raise ValueError("sparse_threshold must be non-negative")
     if mode not in {"sign1", "ternary05", "sparse05"}:
         raise ValueError("mode must be 'sign1', 'ternary05' or 'sparse05'")
     if mode == "sparse05":
-        payload, scales = encode_sparse05(values, group_size, threshold=0.125)
+        payload, scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
         return PackedKV(mode, len(values), group_size, payload, scales)
     payload = bytearray((len(values) + (7 if mode == "sign1" else 3)) // (8 if mode == "sign1" else 4))
     scales: list[float] = []

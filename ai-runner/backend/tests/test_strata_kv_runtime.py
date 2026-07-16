@@ -27,3 +27,11 @@ def test_sparse05_runtime_round_trip():
     assert values[0] == 0.0
     assert values[1] > 0.0
     assert values[2] < 0.0
+
+
+def test_sparse_threshold_is_configurable():
+    cache = UltraKVCache(width=2, capacity_tokens=1, mode="sparse05", group_size=2, sparse_threshold=1.0)
+    cache.append([0.5, 2.0])
+    values = cache.values()
+    assert values[0] == 0.0
+    assert values[1] != 0.0

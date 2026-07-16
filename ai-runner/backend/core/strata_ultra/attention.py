@@ -19,10 +19,10 @@ def _softmax(values: list[float]) -> list[float]:
 class LowBitAttention:
     """Single-head reference attention with quantized rolling K/V history."""
 
-    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1"):
+    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", sparse_threshold: float = 0.125):
         self.width = width
-        self.keys = UltraKVCache(width, capacity_tokens, mode)
-        self.values = UltraKVCache(width, capacity_tokens, mode)
+        self.keys = UltraKVCache(width, capacity_tokens, mode, sparse_threshold=sparse_threshold)
+        self.values = UltraKVCache(width, capacity_tokens, mode, sparse_threshold=sparse_threshold)
 
     def step(self, query: list[float], key: list[float], value: list[float]) -> list[float]:
         if len(query) != self.width or len(key) != self.width or len(value) != self.width:

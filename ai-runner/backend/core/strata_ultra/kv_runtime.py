@@ -24,15 +24,18 @@ class UltraKVCache:
     backends can replace the repack step with append-only bit buffers later.
     """
 
-    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", group_size: int = 128):
+    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", group_size: int = 128, sparse_threshold: float = 0.125):
         if width <= 0 or capacity_tokens <= 0:
             raise ValueError("width and capacity_tokens must be positive")
         if mode not in {"sign1", "ternary05", "sparse05"}:
             raise ValueError("mode must be 'sign1', 'ternary05' or 'sparse05'")
+        if sparse_threshold < 0:
+            raise ValueError("sparse_threshold must be non-negative")
         self.width = width
         self.capacity_tokens = capacity_tokens
         self.mode = mode
         self.group_size = group_size
+        self.sparse_threshold = sparse_threshold
         self._values: list[float] = []
         self._cache: PackedKV | None = None
         self.evicted_tokens = 0
@@ -49,7 +52,7 @@ class UltraKVCache:
         if overflow:
             del self._values[:overflow * self.width]
             self.evicted_tokens += overflow
-        self._cache = encode_kv(self._values, self.mode, self.group_size) if self._values else None
+        self._cache = encode_kv(self._values, self.mode, self.group_size, self.sparse_threshold) if self._values else None
 
     def values(self) -> list[float]:
         return decode_kv(self._cache) if self._cache else []

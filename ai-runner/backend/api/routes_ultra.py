@@ -97,6 +97,7 @@ class AttentionStepRequest(BaseModel):
     width: int = Field(ge=1, le=16_384)
     capacity_tokens: int = Field(default=2048, ge=1, le=1_000_000)
     mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05|sparse05)$")
+    sparse_threshold: float = Field(default=0.125, ge=0.0, le=10.0)
     query: List[float] = Field(min_length=1, max_length=16_384)
     key: List[float] = Field(min_length=1, max_length=16_384)
     value: List[float] = Field(min_length=1, max_length=16_384)
@@ -271,7 +272,7 @@ async def attention_step(request: AttentionStepRequest):
     if not (len(request.query) == len(request.key) == len(request.value) == request.width):
         raise HTTPException(status_code=422, detail="query, key ve value width ile aynı uzunlukta olmalıdır.")
     try:
-        attention = LowBitAttention(request.width, request.capacity_tokens, request.mode)
+        attention = LowBitAttention(request.width, request.capacity_tokens, request.mode, request.sparse_threshold)
         output = attention.step(request.query, request.key, request.value)
         return {"output": output, "keys": attention.keys.snapshot().__dict__, "values": attention.values.snapshot().__dict__}
     except ValueError as exc:

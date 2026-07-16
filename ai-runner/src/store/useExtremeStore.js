@@ -211,6 +211,7 @@ const useExtremeStore = create((set, get) => ({
           key,
           value,
           mode: options.mode || 'sign1',
+          sparse_threshold: options.sparseThreshold ?? 0.125,
           capacity_tokens: options.capacityTokens || 2048,
         }),
       });
