@@ -27,6 +27,14 @@ For a reproducible deployment build, set the GPU architecture explicitly,
 for example `-DSTRATA_CUDA_ARCHITECTURES=86;89`. Leaving it empty lets CMake
 choose its default architecture policy.
 
+The repository also includes an automatic Windows helper. It checks for
+`nvcc`, detects the first GPU compute capability through `nvidia-smi`, and
+builds the Release DLL:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-native-cuda.ps1
+```
+
 Set `STRATA_CUDA_LIBRARY` to the resulting shared library when it is outside
 the standard search paths. The API reports the backend under
 `/api/ultra/capabilities`; selecting `cuda` without the library returns a
