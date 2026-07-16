@@ -12,7 +12,7 @@ from .paging import LayerPager, PageEvent
 from .benchmark import run_codec_benchmark
 from .container import StrataContainerReader, StrataContainerWriter, TensorRecord
 from .converter import convert_gguf_to_strata
-from .executor import StrataRuntime, matmul, matvec, matvec_streaming
+from .executor import StrataRuntime, matmul, matmul_streaming, matvec, matvec_streaming
 from .kv_runtime import KVSnapshot, UltraKVCache
 from .graph import LinearNode, StrataGraph
 from .attention import LowBitAttention
@@ -46,6 +46,7 @@ __all__ = [
     "matvec",
     "matvec_streaming",
     "matmul",
+    "matmul_streaming",
     "KVSnapshot",
     "UltraKVCache",
     "LinearNode",

@@ -76,6 +76,8 @@ def matmul(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]
     """Compute multiple vectors while decoding the packed tensor once."""
     if any(len(vector) != record.cols for vector in matrix):
         raise ValueError(f"every vector must have {record.cols} columns")
+    if record.codec == "ternary-q05":
+        return matmul_streaming(record, matrix)
     values = _tensor_values(record)
     output = []
     for vector in matrix:
@@ -84,6 +86,15 @@ def matmul(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]
             for row in range(record.rows)
         ])
     return output
+
+
+def matmul_streaming(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]:
+    """Batch matmul over packed ternary weights with bounded temporary memory."""
+    if record.codec != "ternary-q05":
+        return matmul(record, matrix)
+    if any(len(vector) != record.cols for vector in matrix):
+        raise ValueError(f"every vector must have {record.cols} columns")
+    return [matvec_streaming(record, vector) for vector in matrix]
 
 
 class StrataRuntime:

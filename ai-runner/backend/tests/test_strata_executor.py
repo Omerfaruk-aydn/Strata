@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matmul, matvec, matvec_streaming
+from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matmul, matmul_streaming, matvec, matvec_streaming
 
 
 def _record():
@@ -32,3 +32,8 @@ def test_strata_runtime_uses_pager(tmp_path: Path):
 def test_matmul_decodes_tensor_for_a_batch():
     result = matmul(_record(), [[1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 0.0, 1.0]])
     assert result == [[-2.0, 6.0], [-1.0, 2.0]]
+
+
+def test_streaming_matmul_matches_reference_batch():
+    matrix = [[1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 0.0, 1.0]]
+    assert matmul_streaming(_record(), matrix) == matmul(_record(), matrix)
