@@ -82,6 +82,22 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  measureStrataQuality: async (reference, reconstructed) => {
+    try {
+      const res = await apiFetch('/api/ultra/quality', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reference, reconstructed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata quality measurement failed');
+      return data.quality;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   runUltraBenchmark: async (valueCount = 16384, groupSize = 128) => {
     try {
       const res = await apiFetch('/api/ultra/benchmark', {

@@ -24,6 +24,7 @@ from ..core.strata_ultra import (
     GenerationConfig,
     StrataGenerator,
     discover_layout,
+    tensor_quality,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -98,6 +99,11 @@ class AttentionStepRequest(BaseModel):
     query: List[float] = Field(min_length=1, max_length=16_384)
     key: List[float] = Field(min_length=1, max_length=16_384)
     value: List[float] = Field(min_length=1, max_length=16_384)
+
+
+class QualityRequest(BaseModel):
+    reference: List[float] = Field(min_length=1, max_length=10_000_000)
+    reconstructed: List[float] = Field(min_length=1, max_length=10_000_000)
 
 
 class TransformerStepRequest(BaseModel):
@@ -177,6 +183,14 @@ async def ultra_layout(model_file: str):
 @router.post("/memory")
 async def memory(request: MemoryRequest):
     return {"report": kv_memory_report(request.value_count, request.group_size)}
+
+
+@router.post("/quality")
+async def quality(request: QualityRequest):
+    try:
+        return {"quality": tensor_quality(request.reference, request.reconstructed)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/matvec")
