@@ -21,6 +21,7 @@ from .transformer import LowBitTransformer, LowBitTransformerBlock
 from .numpy_backend import matmul_fast, numpy_available
 from .generation import GenerationConfig, StrataGenerator
 from .tokenizer import ByteTokenizer
+from .sparse_codec import decode_sparse05, encode_sparse05
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -57,4 +58,6 @@ __all__ = [
     "GenerationConfig",
     "StrataGenerator",
     "ByteTokenizer",
+    "encode_sparse05",
+    "decode_sparse05",
 ]
