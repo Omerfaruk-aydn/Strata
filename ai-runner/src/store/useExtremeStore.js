@@ -192,6 +192,31 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  runStrataTransformerStep: async (modelFile, blockPrefixes, width, hidden, options = {}) => {
+    try {
+      const res = await apiFetch('/api/ultra/transformer/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_file: modelFile,
+          block_prefixes: blockPrefixes,
+          width,
+          hidden,
+          context_capacity: options.contextCapacity || 2048,
+          kv_mode: options.kvMode || 'sign1',
+          memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
+          resident_window: options.residentWindow || 2,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata transformer execution failed');
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   fetchPresets: async () => {
     try {
       const res = await apiFetch('/api/extreme/presets');

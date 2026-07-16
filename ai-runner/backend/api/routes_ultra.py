@@ -19,6 +19,8 @@ from ..core.strata_ultra import (
     StrataRuntime,
     LinearNode,
     LowBitAttention,
+    LowBitTransformer,
+    LowBitTransformerBlock,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -90,6 +92,17 @@ class AttentionStepRequest(BaseModel):
     query: List[float] = Field(min_length=1, max_length=16_384)
     key: List[float] = Field(min_length=1, max_length=16_384)
     value: List[float] = Field(min_length=1, max_length=16_384)
+
+
+class TransformerStepRequest(BaseModel):
+    model_file: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._-]+\.strata$")
+    block_prefixes: List[str] = Field(min_length=1, max_length=1024)
+    width: int = Field(ge=1, le=16_384)
+    context_capacity: int = Field(default=2048, ge=1, le=1_000_000)
+    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    hidden: List[float] = Field(min_length=1, max_length=16_384)
+    memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
+    resident_window: int = Field(default=2, ge=1, le=1024)
 
 
 @router.get("/capabilities")
@@ -208,6 +221,36 @@ async def attention_step(request: AttentionStepRequest):
         output = attention.step(request.query, request.key, request.value)
         return {"output": output, "keys": attention.keys.snapshot().__dict__, "values": attention.values.snapshot().__dict__}
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/transformer/step")
+async def transformer_step(request: TransformerStepRequest):
+    if len(request.hidden) != request.width:
+        raise HTTPException(status_code=422, detail="hidden width ile aynı uzunlukta olmalıdır.")
+    root = Path(model_manager.model_dir).resolve()
+    model_path = (root / request.model_file).resolve()
+    if model_path.parent != root or not model_path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        def execute():
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+                blocks = []
+                for prefix in request.block_prefixes:
+                    names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
+                    blocks.append(LowBitTransformerBlock(
+                        runtime, q_proj=names["q"], k_proj=names["k"], v_proj=names["v"], o_proj=names["o"],
+                        gate_proj=names["gate"], up_proj=names["up"], down_proj=names["down"], width=request.width,
+                        context_capacity=request.context_capacity, kv_mode=request.kv_mode,
+                    ))
+                result = LowBitTransformer(blocks).step(request.hidden)
+                return {"hidden": result, "blocks": len(blocks), "pager": {
+                    "resident_pages": runtime.pager.resident_pages,
+                    "resident_bytes": runtime.pager.resident_bytes,
+                    "events": len(runtime.pager.events),
+                }}
+        return await asyncio.to_thread(execute)
+    except (ValueError, MemoryError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
