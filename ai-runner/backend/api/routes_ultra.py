@@ -540,7 +540,32 @@ async def stop_generate_text():
 async def strata_chat_completions(request: StrataChatRequest):
     """OpenAI-shaped non-streaming chat adapter for the Strata generator."""
     if request.stream:
-        raise HTTPException(status_code=501, detail="Strata chat streaming henüz desteklenmiyor")
+        prompt = format_chat_prompt([
+            StrataChatMessage(message.role, message.content)
+            for message in request.messages
+        ])
+        generation_values = request.model_dump(exclude={"messages", "stream"})
+        generation_values["prompt"] = prompt
+        lower_stream = await strata_generate_stream(GenerateRequest(**generation_values))
+
+        async def openai_body():
+            response_id = f"strata-{int(time.time() * 1000)}"
+            role_chunk = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
+            yield f"data: {json.dumps(role_chunk)}\n\n"
+            async for raw in lower_stream.body_iterator:
+                if not raw.startswith("data: "):
+                    continue
+                event = json.loads(raw[6:].strip())
+                if "text" in event:
+                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": event["text"]}, "finish_reason": None}]}
+                elif "finish_reason" in event:
+                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": event["finish_reason"]}]}
+                else:
+                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [], "error": event}
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(openai_body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
     try:
         prompt = format_chat_prompt([
             StrataChatMessage(message.role, message.content)

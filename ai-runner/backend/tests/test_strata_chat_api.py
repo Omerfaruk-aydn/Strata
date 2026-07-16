@@ -17,10 +17,25 @@ def _request(**overrides):
 
 
 @pytest.mark.asyncio
-async def test_strata_chat_rejects_streaming_until_native_stream_contract_exists():
-    with pytest.raises(routes_ultra.HTTPException) as failure:
-        await routes_ultra.strata_chat_completions(_request(stream=True))
-    assert failure.value.status_code == 501
+async def test_strata_chat_stream_maps_token_events_to_openai_deltas(monkeypatch):
+    class FakeResponse:
+        async def body_iterator(self):
+            yield 'data: {"text":"hello"}\n\n'
+            yield 'data: {"finish_reason":"length"}\n\n'
+
+    async def fake_stream(request):
+        return FakeResponse()
+
+    monkeypatch.setattr(routes_ultra, "strata_generate_stream", fake_stream)
+    response = await routes_ultra.strata_chat_completions(_request(stream=True))
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+
+    assert '"role": "assistant"' in chunks[0]
+    assert '"content": "hello"' in chunks[1]
+    assert '"finish_reason": "length"' in chunks[2]
+    assert chunks[-1] == "data: [DONE]\n\n"
 
 
 @pytest.mark.asyncio
