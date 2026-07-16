@@ -184,7 +184,7 @@ Strata Ultra is the independent low-bit research runtime inside the project. It 
 
 Current capabilities:
 
-- Versioned, checksummed `.strata` tensor containers.
+- Versioned, checksummed `.strata` tensor containers supporting `ternary-q05` and `sparse05` targets.
 - Experimental `STRATA-Q0.5` ternary tensor packing with per-group scales.
 - Experimental `sparse05` variable-length codec that omits zero weights and can reach sub-bit storage on sparse groups.
 - GGUF conversion for F32, F16, Q4_0, Q8_0, Q4_K, Q5_K, and Q6_K source tensors.
