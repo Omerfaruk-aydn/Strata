@@ -14,8 +14,9 @@ from typing import BinaryIO
 
 from ..model_loader import _extract_metadata, _read_exact
 from .container import StrataContainerWriter, TensorRecord
-from .ternary import encode_ternary
-from .sparse_codec import encode_sparse05
+from .ternary import decode_ternary, encode_ternary
+from .sparse_codec import decode_sparse05, encode_sparse05
+from .quality import tensor_quality
 
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
@@ -272,6 +273,7 @@ def convert_gguf_to_strata(
             "group_size": group_size,
         })
         converted = 0
+        quality_totals = {"mse": 0.0, "rmse": 0.0, "max_abs_error": 0.0, "cosine_similarity": 0.0}
         for name, dims, tensor_type, offset in infos:
             if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K}:
                 supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K only in this converter"
@@ -321,8 +323,13 @@ def convert_gguf_to_strata(
                 values = _decode_q6_k(raw, count)
             if target_codec == "sparse05":
                 packed, scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
+                reconstructed = decode_sparse05(packed, scales, count, group_size)
             else:
                 packed, scales = encode_ternary(values, group_size)
+                reconstructed = decode_ternary(packed, scales, count, group_size)
+            metrics = tensor_quality(values, reconstructed)
+            for key in quality_totals:
+                quality_totals[key] += float(metrics[key])
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
             rows = int(dims[0])
             cols = int(count // rows)
@@ -337,4 +344,5 @@ def convert_gguf_to_strata(
         "target_bytes": os.path.getsize(target),
         "codec": target_codec,
         "sparse_threshold": sparse_threshold if target_codec == "sparse05" else None,
+        "quality": {key: round(value / converted, 8) for key, value in quality_totals.items()} if converted else None,
     }

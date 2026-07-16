@@ -25,6 +25,8 @@ def test_f32_gguf_converts_to_strata(tmp_path: Path):
     _write_float_gguf(source, 0, (-1.0, 0.0, 2.0, -3.0))
     result = convert_gguf_to_strata(source, target, group_size=4)
     assert result["tensor_count"] == 1
+    assert 0.0 <= result["quality"]["mse"]
+    assert -1.0 <= result["quality"]["cosine_similarity"] <= 1.0
     with StrataContainerReader(target) as reader:
         assert reader.tensor_names() == ["test.weight"]
 

@@ -188,6 +188,7 @@ Current capabilities:
 - Experimental `STRATA-Q0.5` ternary tensor packing with per-group scales.
 - Experimental `sparse05` variable-length codec that omits zero weights and can reach sub-bit storage on sparse groups.
 - Sparse conversion uses a configurable magnitude threshold (default `0.125`) so sparsity is explicit and measurable rather than assumed.
+- Every conversion returns aggregate MSE, RMSE, maximum absolute error, and cosine similarity for the reconstructed tensors.
 - GGUF conversion for F32, F16, Q4_0, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, and Q6_K source tensors.
 - Independent reference CPU executor with on-the-fly dequantization.
 - Pager-backed linear graphs, low-bit attention, SwiGLU MLP layers, and multi-block transformer execution.
