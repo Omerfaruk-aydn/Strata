@@ -39,11 +39,37 @@ def matvec(record: TensorRecord, vector: list[float]) -> list[float]:
     """Compute ``record × vector`` using on-the-fly Q0.5 dequantization."""
     if len(vector) != record.cols:
         raise ValueError(f"vector length {len(vector)} != tensor columns {record.cols}")
+    if record.codec == "ternary-q05":
+        return matvec_streaming(record, vector)
     values = _tensor_values(record)
     return [
         sum(values[row * record.cols + col] * vector[col] for col in range(record.cols))
         for row in range(record.rows)
     ]
+
+
+def matvec_streaming(record: TensorRecord, vector: list[float]) -> list[float]:
+    """Multiply ternary weights without materializing the full float tensor."""
+    if record.codec != "ternary-q05":
+        return matvec(record, vector)
+    if len(vector) != record.cols:
+        raise ValueError(f"vector length {len(vector)} != tensor columns {record.cols}")
+    count = record.rows * record.cols
+    scales_count = (count + record.group_size - 1) // record.group_size
+    if len(record.scales) != scales_count * 4:
+        raise ValueError(f"invalid scale table for tensor {record.name}")
+    scales = struct.unpack(f"<{scales_count}f", record.scales)
+    output = [0.0] * record.rows
+    for row in range(record.rows):
+        total = 0.0
+        base = row * record.cols
+        for col in range(record.cols):
+            index = base + col
+            code = (record.payload[index // 4] >> ((index % 4) * 2)) & 3
+            if code:
+                total += (-1.0 if code == 1 else 1.0) * scales[index // record.group_size] * vector[col]
+        output[row] = total
+    return output
 
 
 def matmul(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]:
@@ -80,6 +106,9 @@ class StrataRuntime:
         )
 
     def tensor_matvec(self, tensor_name: str, vector: list[float]) -> list[float]:
+        record = self.pager.get(tensor_name)
+        if self.backend == "python":
+            return matvec(record, vector)
         return self.tensor_matmul(tensor_name, [vector])[0]
 
     def tensor_matmul(self, tensor_name: str, matrix: list[list[float]]) -> list[list[float]]:

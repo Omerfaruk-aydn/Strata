@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matmul, matvec
+from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matmul, matvec, matvec_streaming
 
 
 def _record():
@@ -15,12 +15,16 @@ def test_q05_matvec_runs_without_external_runtime():
     assert result == [-2.0, 6.0]
 
 
+def test_streaming_q05_matvec_matches_reference():
+    assert matvec_streaming(_record(), [1.0, 2.0, 3.0, 4.0]) == matvec(_record(), [1.0, 2.0, 3.0, 4.0])
+
+
 def test_strata_runtime_uses_pager(tmp_path: Path):
     target = tmp_path / "runtime.strata"
     writer = StrataContainerWriter({"profile": "STRATA-Q0.5"})
     writer.add_tensor(_record())
     writer.write(target)
-    with StrataRuntime(target, memory_budget_bytes=1024, resident_window=1) as runtime:
+    with StrataRuntime(target, memory_budget_bytes=1024, resident_window=1, backend="python") as runtime:
         assert runtime.tensor_matvec("dense.weight", [1.0, 2.0, 3.0, 4.0]) == [-2.0, 6.0]
         assert runtime.pager.resident_pages == 1
 
