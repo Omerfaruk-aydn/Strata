@@ -4,6 +4,8 @@
 
 #include <cuda_runtime.h>
 #include <cstdint>
+#include <cstddef>
+#include <limits>
 
 #if defined(_WIN32)
 #define STRATA_EXPORT extern "C" __declspec(dllexport)
@@ -50,6 +52,9 @@ STRATA_EXPORT int strata_cuda_ternary_matvec(
     std::uint32_t cols,
     std::uint32_t group_size) {
   if (!packed || !scales || !vector || !output || rows == 0 || cols == 0 || group_size == 0) {
+    return static_cast<int>(cudaErrorInvalidValue);
+  }
+  if (static_cast<std::size_t>(rows) > std::numeric_limits<std::size_t>::max() / static_cast<std::size_t>(cols)) {
     return static_cast<int>(cudaErrorInvalidValue);
   }
 
