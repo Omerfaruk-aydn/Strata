@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from .iq_registry import get_iq_codec
+
 _LIBRARY: Optional[ctypes.CDLL] = None
 
 
@@ -41,6 +43,16 @@ def native_iq_available() -> bool:
 
 
 def decode_iq_native(type_id: int, raw: bytes, value_count: int) -> tuple[float, ...]:
+    codec = get_iq_codec(type_id)
+    if codec is None or codec.type_id == 20:
+        raise ValueError(f"unsupported native IQ type id: {type_id}")
+    if value_count <= 0 or value_count % codec.block_values != 0:
+        raise ValueError(f"value_count must be a positive multiple of {codec.block_values}")
+    if codec.block_bytes is None:
+        raise ValueError(f"native IQ block size is unknown for type id: {type_id}")
+    expected_bytes = (value_count // codec.block_values) * codec.block_bytes
+    if len(raw) != expected_bytes:
+        raise ValueError(f"raw IQ payload has {len(raw)} bytes; expected {expected_bytes}")
     library = _load()
     if library is None:
         raise RuntimeError("Native GGML IQ decoder is not installed; build native/ with STRATA_GGML_ROOT")
