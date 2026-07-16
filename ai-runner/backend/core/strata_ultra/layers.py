@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .executor import StrataRuntime, matvec
+from .executor import StrataRuntime
 
 
 def rms_norm(values: list[float], epsilon: float = 1e-5) -> list[float]:
@@ -30,7 +30,7 @@ class LowBitMLP:
 
     def forward(self, values: list[float]) -> list[float]:
         normalized = rms_norm(values)
-        gate = matvec(self.runtime.pager.get(self.gate), normalized)
-        up = matvec(self.runtime.pager.get(self.up), normalized)
+        gate = self.runtime.tensor_matvec(self.gate, normalized)
+        up = self.runtime.tensor_matvec(self.up, normalized)
         hidden = [silu(gate[index]) * up[index] for index in range(len(gate))]
-        return matvec(self.runtime.pager.get(self.down), hidden)
+        return self.runtime.tensor_matvec(self.down, hidden)

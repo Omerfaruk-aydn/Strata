@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .executor import StrataRuntime, matvec
+from .executor import StrataRuntime
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class StrataGraph:
     def run(self, vector: list[float]) -> list[float]:
         output = list(vector)
         for node in self.nodes:
-            output = matvec(self.runtime.pager.get(node.tensor_name), output)
+            output = self.runtime.tensor_matvec(node.tensor_name, output)
             if node.activation == "relu":
                 output = [max(0.0, value) for value in output]
         return output

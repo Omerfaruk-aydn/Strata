@@ -76,7 +76,7 @@ class StrataRuntime:
         )
 
     def tensor_matvec(self, tensor_name: str, vector: list[float]) -> list[float]:
-        return matvec(self.pager.get(tensor_name), vector)
+        return self.tensor_matmul(tensor_name, [vector])[0]
 
     def tensor_matmul(self, tensor_name: str, matrix: list[list[float]]) -> list[list[float]]:
         record = self.pager.get(tensor_name)

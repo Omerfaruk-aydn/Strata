@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .attention import LowBitAttention
-from .executor import StrataRuntime, matvec
+from .executor import StrataRuntime
 from .layers import LowBitMLP, rms_norm
 
 
@@ -35,11 +35,11 @@ class LowBitTransformerBlock:
 
     def step(self, hidden: list[float]) -> list[float]:
         normalized = rms_norm(hidden)
-        query = matvec(self.runtime.pager.get(self.q_proj), normalized)
-        key = matvec(self.runtime.pager.get(self.k_proj), normalized)
-        value = matvec(self.runtime.pager.get(self.v_proj), normalized)
+        query = self.runtime.tensor_matvec(self.q_proj, normalized)
+        key = self.runtime.tensor_matvec(self.k_proj, normalized)
+        value = self.runtime.tensor_matvec(self.v_proj, normalized)
         attended = self.attention.step(query, key, value)
-        projected = matvec(self.runtime.pager.get(self.o_proj), attended)
+        projected = self.runtime.tensor_matvec(self.o_proj, attended)
         residual = [hidden[index] + projected[index] for index in range(len(hidden))]
         mlp_output = self.mlp.forward(residual)
         return [residual[index] + mlp_output[index] for index in range(len(residual))]
