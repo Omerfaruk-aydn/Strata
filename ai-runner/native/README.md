@@ -22,3 +22,12 @@ The kernel is deliberately narrow at this stage: it supports only the
 `ternary-q05` weight codec and synchronous host-buffer calls. Sparse05,
 batched streams, Vulkan, and fused transformer kernels require separate
 benchmarked implementations and are not advertised as CUDA support yet.
+
+## Native IQ bridge
+
+If a local llama.cpp/ggml source checkout is available, configure
+`STRATA_GGML_ROOT` when configuring CMake. The resulting `strata_iq` library
+exposes a stable ABI for GGML IQ1/IQ2/IQ3 dequantization and can be selected
+with `STRATA_IQ_LIBRARY`. The bridge validates type, block size, and element
+count before calling the upstream dequantizer. Without this optional library,
+IQ codecs remain unavailable and are reported as such by the API.

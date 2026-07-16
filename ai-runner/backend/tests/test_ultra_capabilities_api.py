@@ -12,3 +12,4 @@ async def test_capabilities_report_active_tokenizer_backend():
     assert result["tokenizer_backend"] == expected
     assert set(result["execution_backends"]) == {"python", "numpy", "cuda"}
     assert result["execution_backends"]["python"]["available"] is True
+    assert isinstance(result["native_iq_decoder"], bool)
