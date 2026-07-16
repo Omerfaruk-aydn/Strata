@@ -130,61 +130,65 @@ async def _stream_chat_completion(
     model_id = engine.model_info.model_id if engine.model_info else "unknown"
     prompt_tokens = engine.count_prompt_tokens(messages)
 
-    async for chunk in engine.generate_streaming(messages, params):
-        if chunk["type"] == "token":
-            data = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": model_id,
-                "choices": [{
-                    "index": 0,
-                    "delta": {"content": chunk["content"]},
-                    "finish_reason": None,
-                }],
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-        elif chunk["type"] == "done":
-            result = chunk.get("result", {})
-            data = {
-                "id": completion_id,
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": model_id,
-                "choices": [{
-                    "index": 0,
-                    "delta": {},
-                    "finish_reason": result.get("finish_reason", "stop"),
-                }],
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-            if include_usage:
-                usage_chunk = {
+    try:
+        async for chunk in engine.generate_streaming(messages, params):
+            if chunk["type"] == "token":
+                data = {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
                     "created": int(time.time()),
                     "model": model_id,
-                    "choices": [],
-                    "usage": {
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": result.get("tokens_generated", 0),
-                        "total_tokens": prompt_tokens + result.get("tokens_generated", 0),
-                    },
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": chunk["content"]},
+                        "finish_reason": None,
+                    }],
                 }
-                yield f"data: {json.dumps(usage_chunk)}\n\n"
-            yield "data: [DONE]\n\n"
-
-        elif chunk["type"] == "error":
-            error = {
-                "error": {
-                    "message": chunk["error"],
-                    "type": "inference_error",
-                    "code": "generation_failed",
+                yield f"data: {json.dumps(data)}\n\n"
+            elif chunk["type"] == "done":
+                result = chunk.get("result", {})
+                data = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": model_id,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": result.get("finish_reason", "stop"),
+                    }],
                 }
-            }
-            yield f"data: {json.dumps(error)}\n\n"
-            yield "data: [DONE]\n\n"
+                yield f"data: {json.dumps(data)}\n\n"
+                if include_usage:
+                    usage_chunk = {
+                        "id": completion_id,
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": model_id,
+                        "choices": [],
+                        "usage": {
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": result.get("tokens_generated", 0),
+                            "total_tokens": prompt_tokens + result.get("tokens_generated", 0),
+                        },
+                    }
+                    yield f"data: {json.dumps(usage_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+            elif chunk["type"] == "error":
+                error = {
+                    "error": {
+                        "message": chunk["error"],
+                        "type": "inference_error",
+                        "code": "generation_failed",
+                    }
+                }
+                yield f"data: {json.dumps(error)}\n\n"
+    finally:
+        # ASGI cancellation/network disconnect must stop the worker thread;
+        # otherwise the single-model engine keeps generating after the client
+        # has gone away and blocks the next request.
+        if engine.is_generating:
+            engine.stop_generation()
 
 
 async def _non_streaming_completion(
@@ -397,6 +401,8 @@ async def send_chat_message(request: MessageRequest):
                 elif chunk["type"] == "error":
                     yield f"data: {json.dumps(chunk)}\n\n"
         finally:
+            if engine.is_generating:
+                engine.stop_generation()
             # Preserve partial output when a browser/network disconnects after
             # generation has already produced useful text.
             if full_response and not assistant_saved:
