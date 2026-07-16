@@ -37,6 +37,11 @@ IQ_CODECS = (
     IQCodec("IQ1_M", 29, 1.7500, 256, 56),
 )
 
+# Type IDs implemented by native/iq/strata_iq.cpp. Keep this list next to the
+# registry so capability reporting and future conversion checks share one ABI
+# contract.
+NATIVE_BRIDGE_TYPE_IDS = frozenset({16, 17, 18, 19, 21, 22, 23, 29})
+
 BY_TYPE_ID = {codec.type_id: codec for codec in IQ_CODECS}
 BY_NAME = {codec.name: codec for codec in IQ_CODECS}
 
@@ -60,8 +65,8 @@ def capability_report(native_bridge: bool = False) -> list[dict]:
             "bits_per_weight": codec.bits_per_weight,
             "block_values": codec.block_values,
             "block_bytes": codec.block_bytes,
-            "decodable": codec.decodable or (native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 23, 29}),
-            "decoder": codec.decoder or ("native-ggml" if native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 23, 29} else None),
+            "decodable": codec.decodable or (native_bridge and codec.type_id in NATIVE_BRIDGE_TYPE_IDS),
+            "decoder": codec.decoder or ("native-ggml" if native_bridge and codec.type_id in NATIVE_BRIDGE_TYPE_IDS else None),
         }
         for codec in IQ_CODECS
     ]

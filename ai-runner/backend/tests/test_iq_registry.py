@@ -1,4 +1,4 @@
-from backend.core.strata_ultra.iq_registry import BY_NAME, capability_report
+from backend.core.strata_ultra.iq_registry import BY_NAME, NATIVE_BRIDGE_TYPE_IDS, capability_report
 
 
 def test_iq_registry_exposes_verified_and_pending_codecs():
@@ -13,5 +13,6 @@ def test_native_capability_report_marks_bridge_codecs_decodable():
     assert report["IQ2_XXS"]["decoder"] == "native-ggml"
     assert report["IQ4_XS"]["decodable"] is True
     assert report["IQ4_XS"]["decoder"] == "native-ggml"
+    assert 23 in NATIVE_BRIDGE_TYPE_IDS
     assert report["IQ4_NL"]["decoder"] == "_decode_iq4_nl"
     assert BY_NAME["IQ3_S"].type_id == 21
