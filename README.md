@@ -189,7 +189,7 @@ Current capabilities:
 - Experimental `sparse05` variable-length codec that omits zero weights and can reach sub-bit storage on sparse groups.
 - Sparse conversion uses a configurable magnitude threshold (default `0.125`) so sparsity is explicit and measurable rather than assumed.
 - Every conversion returns aggregate MSE, RMSE, maximum absolute error, and cosine similarity for the reconstructed tensors.
-- GGUF conversion for F32, F16, Q4_0, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, and Q6_K source tensors.
+- GGUF conversion for F32, F16, Q4_0, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, and IQ4_NL source tensors.
 - Independent reference CPU executor with on-the-fly dequantization.
 - Optional GGUF BPE tokenizer adapter built from preserved token/merge metadata, with an explicit byte-fallback when the optional `tokenizers` dependency or compatible metadata is unavailable.
 - Install the optional adapter with `pip install -r backend/requirements-ultra.txt` when model-specific BPE tokenization is needed.
@@ -200,7 +200,7 @@ Current capabilities:
 - API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
 - Preflight inspection reports codec distribution, packed/scales memory, tokenizer metadata, missing block roles, and experimental generation readiness.
 
-The current reference executor is a correctness and format-validation milestone. It is not yet a production-grade conversational runtime, and a `.strata` file cannot be loaded by the existing llama.cpp inference path. GGUF architectures with tokenizer metadata incompatible with the optional BPE adapter use the explicit byte fallback. IQ1, IQ2, and other unsupported block formats require dedicated decoders before conversion is enabled for them. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
+The Strata executor has a Python/NumPy correctness path and an optional native CUDA ternary matvec backend under `ai-runner/native`. It is not yet a production-grade conversational runtime, and a `.strata` file cannot be loaded by the existing llama.cpp inference path. GGUF architectures with tokenizer metadata incompatible with the optional BPE adapter use the explicit byte fallback. IQ4_NL conversion is supported; IQ1, IQ2, IQ3, IQ4_XS, and other unsupported block formats still require dedicated decoders before conversion is enabled for them. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
 
 Useful API calls:
 
