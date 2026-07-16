@@ -16,3 +16,8 @@ def test_native_iq_rejects_misaligned_value_count():
 def test_native_iq_rejects_wrong_payload_size():
     with pytest.raises(ValueError, match="expected 66"):
         decode_iq_native(16, b"", 256)
+
+
+def test_iq4_xs_uses_native_block_geometry():
+    with pytest.raises(ValueError, match="expected 136"):
+        decode_iq_native(23, b"", 256)

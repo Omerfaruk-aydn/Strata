@@ -60,8 +60,8 @@ def capability_report(native_bridge: bool = False) -> list[dict]:
             "bits_per_weight": codec.bits_per_weight,
             "block_values": codec.block_values,
             "block_bytes": codec.block_bytes,
-            "decodable": codec.decodable or (native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 29}),
-            "decoder": codec.decoder or ("native-ggml" if native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 29} else None),
+            "decodable": codec.decodable or (native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 23, 29}),
+            "decoder": codec.decoder or ("native-ggml" if native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 23, 29} else None),
         }
         for codec in IQ_CODECS
     ]

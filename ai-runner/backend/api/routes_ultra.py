@@ -207,7 +207,7 @@ async def capabilities():
     native_iq = native_iq_available()
     source_codecs = ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "IQ4_NL"]
     if native_iq:
-        source_codecs.extend(["IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S"])
+        source_codecs.extend(["IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S", "IQ4_XS"])
     iq_codecs = iq_capability_report(native_bridge=native_iq)
     unsupported_iq = [item["name"] for item in iq_codecs if not item["decodable"]]
     cuda = cuda_available()

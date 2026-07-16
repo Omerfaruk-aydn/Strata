@@ -52,6 +52,10 @@ STRATA_IQ_EXPORT int strata_ggml_dequant_iq(
       if (raw_bytes != static_cast<std::size_t>(value_count / 256) * sizeof(block_iq1_m)) return 3;
       dequantize_row_iq1_m(reinterpret_cast<const block_iq1_m *>(raw), output, value_count);
       return 0;
+    case 23:
+      if (raw_bytes != static_cast<std::size_t>(value_count / 256) * sizeof(block_iq4_xs)) return 3;
+      dequantize_row_iq4_xs(reinterpret_cast<const block_iq4_xs *>(raw), output, value_count);
+      return 0;
     default:
       return 4;
   }
