@@ -178,6 +178,33 @@ python -m backend.main
 
 Quantization runs as a single managed background job, validates both source and output GGUF structure, cleans partial output after failure/cancellation, and registers completed outputs in the local model shelf.
 
+## Strata Ultra (experimental)
+
+Strata Ultra is the independent low-bit research runtime inside the project. It is designed to explore how very large models can be stored and executed on constrained systems without making unsupported claims about quality or hardware limits.
+
+Current capabilities:
+
+- Versioned, checksummed `.strata` tensor containers.
+- Experimental `STRATA-Q0.5` ternary tensor packing with per-group scales.
+- GGUF conversion for F32, F16, Q4_0, and Q8_0 source tensors.
+- Independent reference CPU executor with on-the-fly dequantization.
+- LRU layer paging with a hard byte budget.
+- Runtime-managed `sign1` KV cache and experimental `ternary05` cache with sliding-window eviction.
+- API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
+
+The current reference executor is a correctness and format-validation milestone. It is not yet a complete transformer implementation, and a `.strata` file cannot be loaded by the existing llama.cpp inference path. Q4_K, Q5_K, Q6_K, IQ1, IQ2, and other block formats require dedicated decoders before conversion is enabled for them. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
+
+Useful API calls:
+
+~~~text
+POST /api/ultra/memory
+POST /api/ultra/benchmark
+POST /api/ultra/paging-plan
+POST /api/ultra/convert/{model_id}
+~~~
+
+The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
+
 ## API
 
 The complete interactive API reference is available at http://127.0.0.1:8420/docs.
