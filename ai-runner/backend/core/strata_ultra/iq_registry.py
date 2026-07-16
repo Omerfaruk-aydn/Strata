@@ -45,7 +45,14 @@ def get_iq_codec(type_id: int) -> Optional[IQCodec]:
     return BY_TYPE_ID.get(type_id)
 
 
-def capability_report() -> list[dict]:
+def capability_report(native_bridge: bool = False) -> list[dict]:
+    """Return codec capabilities for the active runtime configuration.
+
+    The pure-Python registry remains deterministic by default.  When the
+    optional GGML bridge is loaded, the bridge-backed IQ codecs are reported
+    as decodable as well, so API consumers do not have to infer capability
+    from a separate boolean flag.
+    """
     return [
         {
             "name": codec.name,
@@ -53,7 +60,8 @@ def capability_report() -> list[dict]:
             "bits_per_weight": codec.bits_per_weight,
             "block_values": codec.block_values,
             "block_bytes": codec.block_bytes,
-            "decodable": codec.decodable,
+            "decodable": codec.decodable or (native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 29}),
+            "decoder": codec.decoder or ("native-ggml" if native_bridge and codec.type_id in {16, 17, 18, 19, 21, 22, 29} else None),
         }
         for codec in IQ_CODECS
     ]
