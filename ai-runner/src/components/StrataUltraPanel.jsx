@@ -13,6 +13,7 @@ export default function StrataUltraPanel({ extreme }) {
   const [groupSize, setGroupSize] = useState(128);
   const [threshold, setThreshold] = useState(0.125);
   const [conversion, setConversion] = useState(null);
+  const [inspection, setInspection] = useState(null);
   const [valueCount, setValueCount] = useState(16384);
 
   useEffect(() => { fetchLocalModels(); }, [fetchLocalModels]);
@@ -22,7 +23,10 @@ export default function StrataUltraPanel({ extreme }) {
 
   const runConversion = async () => {
     if (!modelId) return;
-    setConversion(await extreme.convertToStrata(modelId, null, groupSize, codec, threshold));
+    const result = await extreme.convertToStrata(modelId, null, groupSize, codec, threshold);
+    setConversion(result);
+    const file = result?.target ? result.target.split(/[\\/]/).pop() : null;
+    if (file) setInspection(await extreme.inspectStrataModel(file));
   };
 
   return <div className="extreme-ultra-layout">
@@ -38,6 +42,7 @@ export default function StrataUltraPanel({ extreme }) {
         {codec === 'sparse05' && <label className="extreme-field"><span>Sparse threshold</span><input type="number" min="0" max="10" step="0.01" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} /></label>}
         <button className="btn btn-primary" disabled={!modelId} onClick={runConversion}>Dönüştürmeyi başlat</button>
         {conversion && <div className="ultra-result">Hazır: {conversion.target || conversion.target_name}<br />MSE {conversion.quality?.mse ?? '—'} · Cosine {conversion.quality?.cosine_similarity ?? '—'}</div>}
+        {inspection && <div className="ultra-result">Packed {mb(inspection.packed_bytes)} · Scales {mb(inspection.scales_bytes)}<br />Generation: {inspection.ready_for_experimental_generation ? 'hazır' : 'eksik mimari/tensor'}</div>}
       </section>
       <section className="extreme-tool-card">
         <span className="extreme-card-kicker">MEMORY LAB</span><h3>Codec benchmark</h3>
