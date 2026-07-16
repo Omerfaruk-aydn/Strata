@@ -9,3 +9,10 @@ def test_layout_discovers_complete_common_transformer_block():
     assert result["block_count"] == 1
     assert result["complete_blocks"] == 1
     assert result["blocks"][0]["tensors"]["q"] == "blk.0.attn_q.weight"
+    assert result["blocks"][0]["missing_roles"] == []
+
+
+def test_layout_reports_missing_roles():
+    result = discover_layout(["blk.0.attn_q.weight", "blk.0.attn_k.weight"])
+    assert result["blocks"][0]["complete"] is False
+    assert "v" in result["blocks"][0]["missing_roles"]

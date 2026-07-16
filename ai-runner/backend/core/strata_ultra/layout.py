@@ -22,7 +22,12 @@ def discover_layout(tensor_names: list[str]) -> dict:
         if role:
             blocks.setdefault(prefix, {})[role] = name
     ordered = [
-        {"prefix": prefix, "tensors": blocks[prefix], "complete": len(blocks[prefix]) == len(ROLE_SUFFIXES)}
+        {
+            "prefix": prefix,
+            "tensors": blocks[prefix],
+            "complete": len(blocks[prefix]) == len(ROLE_SUFFIXES),
+            "missing_roles": sorted(set(ROLE_SUFFIXES.values()) - set(blocks[prefix])),
+        }
         for prefix in sorted(blocks, key=lambda value: int(re.search(r"\.(\d+)$", value).group(1)))
     ]
     return {
