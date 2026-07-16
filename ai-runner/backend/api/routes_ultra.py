@@ -551,19 +551,24 @@ async def strata_chat_completions(request: StrataChatRequest):
         async def openai_body():
             response_id = f"strata-{int(time.time() * 1000)}"
             role_chunk = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]}
-            yield f"data: {json.dumps(role_chunk)}\n\n"
-            async for raw in lower_stream.body_iterator:
-                if not raw.startswith("data: "):
-                    continue
-                event = json.loads(raw[6:].strip())
-                if "text" in event:
-                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": event["text"]}, "finish_reason": None}]}
-                elif "finish_reason" in event:
-                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": event["finish_reason"]}]}
-                else:
-                    payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [], "error": event}
-                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-            yield "data: [DONE]\n\n"
+            try:
+                yield f"data: {json.dumps(role_chunk)}\n\n"
+                async for raw in lower_stream.body_iterator:
+                    if not raw.startswith("data: "):
+                        continue
+                    event = json.loads(raw[6:].strip())
+                    if "text" in event:
+                        payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": event["text"]}, "finish_reason": None}]}
+                    elif "finish_reason" in event:
+                        payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": event["finish_reason"]}]}
+                    else:
+                        payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [], "error": event}
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            finally:
+                close = getattr(lower_stream.body_iterator, "aclose", None)
+                if close is not None:
+                    await close()
 
         return StreamingResponse(openai_body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
     try:

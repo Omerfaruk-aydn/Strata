@@ -233,9 +233,8 @@ POST /api/ultra/quality
 tokenizer, block count, and execution backend.
 
 `POST /api/ultra/chat/completions` accepts `system`, `user`, and `assistant`
-messages and returns an OpenAI-shaped non-streaming completion. Set `stream`
-to `false`; the OpenAI-shaped chat wrapper remains non-streaming while the
-lower-level token stream is exposed by `/api/ultra/generate/stream`.
+messages and returns an OpenAI-shaped completion. Set `stream` to `true` for
+OpenAI-compatible delta chunks and `[DONE]`, or `false` for the full response.
 
 `POST /api/ultra/generate/stream` now exposes that token-level contract as
 SSE. Each `data` event contains the token ID and decoded delta; the terminal
