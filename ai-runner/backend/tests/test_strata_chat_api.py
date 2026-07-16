@@ -19,6 +19,7 @@ def _request(**overrides):
 @pytest.mark.asyncio
 async def test_strata_chat_stream_maps_token_events_to_openai_deltas(monkeypatch):
     class FakeResponse:
+        @property
         async def body_iterator(self):
             yield 'data: {"text":"hello"}\n\n'
             yield 'data: {"finish_reason":"length"}\n\n'
