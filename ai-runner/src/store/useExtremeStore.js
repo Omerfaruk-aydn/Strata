@@ -113,6 +113,7 @@ const useExtremeStore = create((set, get) => ({
           vector,
           memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
           resident_window: options.residentWindow || 2,
+          backend: options.backend || 'auto',
         }),
       });
       const data = await res.json();
@@ -136,6 +137,7 @@ const useExtremeStore = create((set, get) => ({
           iterations: options.iterations || 10,
           memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
           resident_window: options.residentWindow || 2,
+          backend: options.backend || 'auto',
         }),
       });
       const data = await res.json();
@@ -158,6 +160,7 @@ const useExtremeStore = create((set, get) => ({
           vector,
           memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
           resident_window: options.residentWindow || 2,
+          backend: options.backend || 'auto',
         }),
       });
       const data = await res.json();
@@ -206,6 +209,7 @@ const useExtremeStore = create((set, get) => ({
           kv_mode: options.kvMode || 'sign1',
           memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
           resident_window: options.residentWindow || 2,
+          backend: options.backend || 'auto',
         }),
       });
       const data = await res.json();

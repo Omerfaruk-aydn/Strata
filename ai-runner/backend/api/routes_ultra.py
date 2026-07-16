@@ -66,6 +66,7 @@ class MatvecRequest(BaseModel):
     vector: List[float] = Field(min_length=1, max_length=1_000_000)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
 
 
 class RuntimeBenchmarkRequest(MatvecRequest):
@@ -103,6 +104,7 @@ class TransformerStepRequest(BaseModel):
     hidden: List[float] = Field(min_length=1, max_length=16_384)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
 
 
 @router.get("/capabilities")
@@ -150,7 +152,7 @@ async def runtime_matvec(request: MatvecRequest):
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
         def execute():
-            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 result = runtime.tensor_matvec(request.tensor_name, request.vector)
                 return {"values": result, "pager": {
                     "resident_pages": runtime.pager.resident_pages,
@@ -169,7 +171,7 @@ async def runtime_benchmark(request: RuntimeBenchmarkRequest):
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
         def execute():
-            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 started = time.perf_counter()
                 result = None
                 for _ in range(request.iterations):
@@ -199,7 +201,7 @@ async def run_graph(request: GraphRunRequest):
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
         def execute():
-            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 graph = StrataGraph(runtime, [LinearNode(node.tensor_name, node.activation) for node in request.nodes])
                 result = graph.run(request.vector)
                 return {"values": result, "nodes": len(request.nodes), "pager": {
@@ -234,7 +236,7 @@ async def transformer_step(request: TransformerStepRequest):
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
         def execute():
-            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 blocks = []
                 for prefix in request.block_prefixes:
                     names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
