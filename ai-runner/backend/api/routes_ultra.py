@@ -114,7 +114,7 @@ class TransformerStepRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     model_file: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._-]+\.strata$")
-    block_prefixes: List[str] = Field(min_length=1, max_length=1024)
+    block_prefixes: List[str] = Field(default_factory=list, max_length=1024)
     embedding_tensor: str = Field(min_length=1, max_length=1024)
     output_tensor: str = Field(min_length=1, max_length=1024)
     width: int = Field(ge=1, le=16_384)
@@ -273,13 +273,21 @@ async def transformer_step(request: TransformerStepRequest):
         def execute():
             with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 blocks = []
-                for prefix in request.block_prefixes:
-                    names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
-                    blocks.append(LowBitTransformerBlock(
-                        runtime, q_proj=names["q"], k_proj=names["k"], v_proj=names["v"], o_proj=names["o"],
-                        gate_proj=names["gate"], up_proj=names["up"], down_proj=names["down"], width=request.width,
-                        context_capacity=request.context_capacity, kv_mode=request.kv_mode,
+                if request.block_prefixes:
+                    layouts = [
+                        {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
+                        for prefix in request.block_prefixes
+                    ]
+                else:
+                    with StrataContainerReader(model_path) as reader:
+                        discovered = discover_layout(reader.tensor_names())
+                    layouts = [item["tensors"] for item in discovered["blocks"] if item["complete"]]
+                for layout in layouts:
+                    blocks.append(LowBitTransformerBlock.from_layout(
+                        runtime, layout, width=request.width, context_capacity=request.context_capacity, kv_mode=request.kv_mode,
                     ))
+                if not blocks:
+                    raise ValueError("no complete transformer blocks discovered")
                 result = LowBitTransformer(blocks).step(request.hidden)
                 return {"hidden": result, "blocks": len(blocks), "pager": {
                     "resident_pages": runtime.pager.resident_pages,

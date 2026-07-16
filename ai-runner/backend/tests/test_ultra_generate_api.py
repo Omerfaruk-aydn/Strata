@@ -7,7 +7,7 @@ from backend.api import routes_ultra
 async def test_generate_request_validates_experimental_contract():
     request = routes_ultra.GenerateRequest(
         model_file="model.strata",
-        block_prefixes=["block.0"],
+        block_prefixes=[],
         embedding_tensor="token_embd.weight",
         output_tensor="output.weight",
         width=4,
