@@ -161,9 +161,9 @@ async def capabilities():
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "execution_backends": {
-            "python": {"available": True, "active": True},
-            "numpy": {"available": True, "active": False},
-            "cuda": {"available": cuda_available(), "active": False},
+            "python": {"available": True, "active": True, "weight_codecs": ["ternary-q05", "sparse05"]},
+            "numpy": {"available": True, "active": False, "weight_codecs": ["ternary-q05", "sparse05"]},
+            "cuda": {"available": cuda_available(), "active": False, "weight_codecs": ["ternary-q05"]},
         },
         "tokenizer_backend": "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback",
         "status": "experimental",
