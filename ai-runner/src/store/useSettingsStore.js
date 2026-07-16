@@ -56,6 +56,7 @@ const useSettingsStore = create((set, get) => ({
   adaptiveLoad: true,
   adaptiveMaxAttempts: 6,
   backendPreference: 'auto',
+  generationTimeoutS: 300,
 
   // ── Actions ──
 
@@ -113,6 +114,7 @@ const useSettingsStore = create((set, get) => ({
         adaptiveLoad: s.adaptive_load ?? true,
         adaptiveMaxAttempts: s.adaptive_max_attempts || 6,
         backendPreference: s.backend_preference || 'auto',
+        generationTimeoutS: s.generation_timeout_s ?? 300,
         isLoaded: true,
       });
 
@@ -171,6 +173,7 @@ const useSettingsStore = create((set, get) => ({
       adaptiveLoad: 'adaptive_load',
       adaptiveMaxAttempts: 'adaptive_max_attempts',
       backendPreference: 'backend_preference',
+      generationTimeoutS: 'generation_timeout_s',
     };
 
     for (const [key, value] of Object.entries(updates)) {

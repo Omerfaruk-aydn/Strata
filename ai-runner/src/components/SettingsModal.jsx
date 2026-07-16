@@ -49,6 +49,7 @@ export default function SettingsModal({ isOpen, onClose }) {
         adaptiveLoad: settings.adaptiveLoad,
         adaptiveMaxAttempts: settings.adaptiveMaxAttempts,
         backendPreference: settings.backendPreference,
+        generationTimeoutS: settings.generationTimeoutS,
         allowNetworkAccess: settings.allowNetworkAccess,
       });
     }
@@ -434,6 +435,23 @@ export default function SettingsModal({ isOpen, onClose }) {
                   <input type="checkbox" checked={localSettings.extremeModeEnabled ?? true} onChange={(e) => update('extremeModeEnabled', e.target.checked)} />
                   <span className="toggle-slider" />
                 </label>
+              </div>
+
+              {/* Generation timeout */}
+              <div className="setting-row">
+                <div className="setting-info">
+                  <label>Generation timeout</label>
+                  <span className="text-small">Model yanıtı bu süreyi aşarsa üretim kontrollü olarak durdurulur. 0 = sınırsız.</span>
+                </div>
+                <input
+                  type="number"
+                  className="setting-input-small"
+                  value={localSettings.generationTimeoutS ?? 300}
+                  onChange={(e) => update('generationTimeoutS', Math.max(0, Math.min(86400, Number(e.target.value) || 0)))}
+                  min={0}
+                  max={86400}
+                  step={1}
+                />
               </div>
 
               <div className="setting-row">
