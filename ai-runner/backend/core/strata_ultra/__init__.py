@@ -11,6 +11,7 @@ from .kv_cache import PackedKV, decode_kv, encode_kv, estimate_kv_bytes, kv_memo
 from .paging import LayerPager, PageEvent
 from .benchmark import run_codec_benchmark
 from .container import StrataContainerReader, StrataContainerWriter, TensorRecord
+from .converter import convert_gguf_to_strata
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -28,4 +29,5 @@ __all__ = [
     "StrataContainerReader",
     "StrataContainerWriter",
     "TensorRecord",
+    "convert_gguf_to_strata",
 ]
