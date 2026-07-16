@@ -219,6 +219,7 @@ POST /api/ultra/transformer/step
 POST /api/ultra/graph/run
 POST /api/ultra/generate
 POST /api/ultra/generate/stop
+POST /api/ultra/generate/stream
 POST /api/ultra/chat/completions
 POST /api/ultra/quality
 ~~~
@@ -233,8 +234,13 @@ tokenizer, block count, and execution backend.
 
 `POST /api/ultra/chat/completions` accepts `system`, `user`, and `assistant`
 messages and returns an OpenAI-shaped non-streaming completion. Set `stream`
-to `false`; streaming is deliberately rejected until a token-level Strata
-stream contract is available.
+to `false`; the OpenAI-shaped chat wrapper remains non-streaming while the
+lower-level token stream is exposed by `/api/ultra/generate/stream`.
+
+`POST /api/ultra/generate/stream` now exposes that token-level contract as
+SSE. Each `data` event contains the token ID and decoded delta; the terminal
+event contains `finish_reason` and `generated_tokens`. Client disconnects and
+timeouts request cooperative cancellation.
 
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
 
