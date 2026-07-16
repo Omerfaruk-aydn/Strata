@@ -131,6 +131,8 @@ async def capabilities():
         "runtime": "strata-ultra",
         "format_version": 1,
         "weight_codecs": ["ternary-q05"],
+        "source_gguf_codecs": ["F32", "F16", "Q4_0", "Q8_0", "Q4_K", "Q5_K", "Q6_K"],
+        "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3", "Q2_K", "Q3_K"],
         "kv_cache_modes": ["sign1", "ternary05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "status": "experimental",
