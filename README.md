@@ -192,6 +192,7 @@ Current capabilities:
 - GGUF conversion for F32, F16, Q4_0, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, and Q6_K source tensors.
 - Independent reference CPU executor with on-the-fly dequantization.
 - Optional GGUF BPE tokenizer adapter built from preserved token/merge metadata, with an explicit byte-fallback when the optional `tokenizers` dependency or compatible metadata is unavailable.
+- Install the optional adapter with `pip install -r backend/requirements-ultra.txt` when model-specific BPE tokenization is needed.
 - Pager-backed linear graphs, low-bit attention, SwiGLU MLP layers, and multi-block transformer execution.
 - Automatic `python`/`numpy` execution backend selection with a correctness fallback.
 - LRU layer paging with a hard byte budget.

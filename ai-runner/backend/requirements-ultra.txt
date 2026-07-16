@@ -1,0 +1,3 @@
+# Optional Strata Ultra tokenizer adapter.
+# Without this package the runtime uses its explicit reversible byte fallback.
+tokenizers>=0.19,<0.24
