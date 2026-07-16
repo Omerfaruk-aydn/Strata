@@ -23,6 +23,7 @@ from .generation import GenerationConfig, StrataGenerator
 from .tokenizer import ByteTokenizer
 from .sparse_codec import decode_sparse05, encode_sparse05
 from .layout import discover_layout
+from .quality import tensor_quality
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -62,4 +63,5 @@ __all__ = [
     "encode_sparse05",
     "decode_sparse05",
     "discover_layout",
+    "tensor_quality",
 ]
