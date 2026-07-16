@@ -322,7 +322,7 @@ def convert_gguf_to_strata(
                     f"Tensor {name} uses {iq_codec.name}; its verified decoder is not available yet"
                 )
             if tensor_type not in base_supported_types and not (iq_codec and native_iq):
-                supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL only in this converter"
+                    supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL plus native GGML IQ1/IQ2/IQ3/IQ4_XS when available"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
