@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from threading import Event
+from collections.abc import Iterator
 
 from .executor import StrataRuntime
 from .tokenizer import ByteTokenizer
@@ -71,3 +72,33 @@ class StrataGenerator:
             "generated_tokens": len(generated),
             "finish_reason": finish_reason,
         }
+
+    def generate_stream(self, prompt: str, config: GenerationConfig | None = None) -> Iterator[dict[str, object]]:
+        """Yield generated token events without buffering the completion."""
+        config = config or GenerationConfig()
+        tokens = self.tokenizer.encode(prompt) or [0]
+        for token in tokens[:-1]:
+            if config.cancel_event is not None and config.cancel_event.is_set():
+                yield {"finish_reason": "cancelled", "generated_tokens": 0}
+                return
+            self.transformer.step(self._embedding_row(token))
+        current = tokens[-1]
+        generated = 0
+        for _ in range(config.max_new_tokens):
+            if config.cancel_event is not None and config.cancel_event.is_set():
+                yield {"finish_reason": "cancelled", "generated_tokens": generated}
+                return
+            hidden = self.transformer.step(self._embedding_row(current))
+            logits = self.runtime.tensor_matvec(self.output, hidden)
+            current = max(range(len(logits)), key=logits.__getitem__)
+            generated += 1
+            stopped = current == config.eos_token or current in config.stop_token_ids
+            yield {
+                "token_id": current,
+                "text": self.tokenizer.decode([current]),
+                "generated_tokens": generated,
+            }
+            if stopped:
+                yield {"finish_reason": "stop", "generated_tokens": generated}
+                return
+        yield {"finish_reason": "length", "generated_tokens": generated}

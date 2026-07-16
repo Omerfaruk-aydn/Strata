@@ -61,3 +61,17 @@ def test_generation_reports_length_finish_reason_and_token_count():
     result = generator.generate_with_metadata("prompt", GenerationConfig(max_new_tokens=2))
 
     assert result == {"text": "prompt1|1", "generated_tokens": 2, "finish_reason": "length"}
+
+
+def test_generation_stream_yields_token_events_and_terminal_reason():
+    generator = StrataGenerator(
+        _GenerationRuntime(), _GenerationTransformer(), "embedding", "output", _GenerationTokenizer()
+    )
+
+    events = list(generator.generate_stream("prompt", GenerationConfig(max_new_tokens=2)))
+
+    assert events == [
+        {"token_id": 1, "text": "1", "generated_tokens": 1},
+        {"token_id": 1, "text": "1", "generated_tokens": 2},
+        {"finish_reason": "length", "generated_tokens": 2},
+    ]
