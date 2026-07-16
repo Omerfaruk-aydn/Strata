@@ -44,11 +44,11 @@ class StrataGenerator:
         tokens = self.tokenizer.encode(prompt)
         if not tokens:
             tokens = [0]
+        generated: list[int] = []
         for token in tokens[:-1]:
             if config.cancel_event is not None and config.cancel_event.is_set():
                 return prompt + self.tokenizer.decode(generated)
             self.transformer.step(self._embedding_row(token))
-        generated: list[int] = []
         current = tokens[-1]
         for _ in range(config.max_new_tokens):
             if config.cancel_event is not None and config.cancel_event.is_set():
