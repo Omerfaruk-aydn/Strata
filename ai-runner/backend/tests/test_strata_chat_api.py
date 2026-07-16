@@ -1,4 +1,5 @@
 import pytest
+from contextlib import contextmanager
 
 from backend.api import routes_ultra
 
@@ -42,3 +43,25 @@ async def test_strata_chat_maps_generation_to_openai_shape(monkeypatch):
     assert response["choices"][0]["message"]["content"] == "answer"
     assert response["choices"][0]["finish_reason"] == "length"
     assert response["usage"]["completion_tokens"] == 2
+
+
+@pytest.mark.asyncio
+async def test_strata_generate_stream_emits_events_and_cleans_state(monkeypatch):
+    class FakeGenerator:
+        def generate_stream(self, prompt, config):
+            yield {"token_id": 7, "text": "ok", "generated_tokens": 1}
+            yield {"finish_reason": "length", "generated_tokens": 1}
+
+    @contextmanager
+    def fake_context(request, cancel_event):
+        yield FakeGenerator(), "byte-fallback", 1, "python"
+
+    monkeypatch.setattr(routes_ultra, "_strata_generator_context", fake_context)
+    response = await routes_ultra.strata_generate_stream(_request())
+    events = []
+    async for chunk in response.body_iterator:
+        events.append(chunk)
+
+    assert '"token_id": 7' in events[0]
+    assert '"finish_reason": "length"' in events[1]
+    assert routes_ultra._strata_generation_cancel is None
