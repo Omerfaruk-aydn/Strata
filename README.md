@@ -218,10 +218,13 @@ POST /api/ultra/attention/step
 POST /api/ultra/transformer/step
 POST /api/ultra/graph/run
 POST /api/ultra/generate
+POST /api/ultra/generate/stop
 POST /api/ultra/quality
 ~~~
 
 `POST /api/ultra/convert/{model_id}` returns the generated container path, codec, sparse threshold when applicable, and aggregate reconstruction-quality metrics. The inspect endpoint reads the container in a bounded streaming pass, so preflight does not materialize the whole model in RAM.
+
+`POST /api/ultra/generate/stop` requests cooperative cancellation of the active Strata generation. It returns `idle` when no generation is running and `stopping` when a cancellation signal was delivered.
 
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
 

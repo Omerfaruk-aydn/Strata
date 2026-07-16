@@ -44,6 +44,9 @@ router = APIRouter(
     dependencies=[Depends(require_api_access)],
 )
 
+_strata_generation_state_lock = threading.Lock()
+_strata_generation_cancel: threading.Event | None = None
+
 
 class MemoryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -394,13 +397,19 @@ async def transformer_step(request: TransformerStepRequest):
 
 @router.post("/generate")
 async def generate_text(request: GenerateRequest):
+    global _strata_generation_cancel
+    cancel_event = threading.Event()
+    with _strata_generation_state_lock:
+        if _strata_generation_cancel is not None:
+            raise HTTPException(status_code=409, detail="Başka bir Strata generation devam ediyor")
+        _strata_generation_cancel = cancel_event
     root = Path(model_manager.model_dir).resolve()
     model_path = (root / request.model_file).resolve()
     if model_path.parent != root or not model_path.is_file():
+        with _strata_generation_state_lock:
+            _strata_generation_cancel = None
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
-        cancel_event = threading.Event()
-
         def execute():
             with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 with StrataContainerReader(model_path) as reader:
@@ -456,6 +465,21 @@ async def generate_text(request: GenerateRequest):
             raise HTTPException(status_code=504, detail="Strata generation timed out") from exc
     except (ValueError, MemoryError, KeyError, IndexError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    finally:
+        with _strata_generation_state_lock:
+            if _strata_generation_cancel is cancel_event:
+                _strata_generation_cancel = None
+
+
+@router.post("/generate/stop")
+async def stop_generate_text():
+    """Request cooperative cancellation of the active Strata generation."""
+    with _strata_generation_state_lock:
+        active = _strata_generation_cancel
+    if active is None:
+        return {"status": "idle"}
+    active.set()
+    return {"status": "stopping"}
 
 
 @router.post("/benchmark")
