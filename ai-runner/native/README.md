@@ -52,6 +52,18 @@ powershell -ExecutionPolicy Bypass -File scripts/build-native-iq.ps1 `
 If the GGML library is in a non-standard location, pass it explicitly with
 `-GgmlLibrary C:\src\llama.cpp\build\src\Release\ggml-base.lib`.
 
+When the bridge DLL depends on a separately built `ggml-base.dll`, expose its
+directory at runtime with `STRATA_GGML_RUNTIME_DIR`. This is especially useful
+on Windows, where the Python loader registers the directory explicitly:
+
+```powershell
+$env:STRATA_IQ_LIBRARY = 'C:\src\Strata\native\build-iq\Release\strata_iq.dll'
+$env:STRATA_GGML_RUNTIME_DIR = 'C:\src\llama.cpp\build\bin\Release'
+```
+
+The CMake integration accepts both the legacy `src` layout and the current
+llama.cpp layout (`ggml/src` plus `ggml/include`).
+
 The GGML checkout and the built `ggml` library must match the GGUF type layout
 used by the model. Strata does not copy or reinterpret upstream codebooks, and
 it does not mark IQ support active until the shared library loads successfully.

@@ -33,9 +33,18 @@ if(STRATA_GGML_ROOT)
     message(FATAL_ERROR "STRATA_GGML_LIBRARY does not exist: ${STRATA_GGML_LIBRARY}")
   endif()
   add_library(strata_iq SHARED iq/strata_iq.cpp)
-  target_include_directories(strata_iq PRIVATE
+  set(STRATA_GGML_INCLUDE_DIRS
     "${STRATA_GGML_ROOT}/include"
     "${STRATA_GGML_ROOT}/src"
+  )
+  if(EXISTS "${STRATA_GGML_ROOT}/ggml/src/ggml-quants.h")
+    list(APPEND STRATA_GGML_INCLUDE_DIRS "${STRATA_GGML_ROOT}/ggml/src")
+    if(EXISTS "${STRATA_GGML_ROOT}/ggml/include/ggml.h")
+      list(APPEND STRATA_GGML_INCLUDE_DIRS "${STRATA_GGML_ROOT}/ggml/include")
+    endif()
+  endif()
+  target_include_directories(strata_iq PRIVATE
+    ${STRATA_GGML_INCLUDE_DIRS}
   )
   target_link_libraries(strata_iq PRIVATE "${STRATA_GGML_LIBRARY}")
   set_target_properties(strata_iq PROPERTIES

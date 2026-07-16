@@ -10,6 +10,26 @@ from typing import Optional
 from .iq_registry import get_iq_codec
 
 _LIBRARY: Optional[ctypes.CDLL] = None
+_DLL_DIRECTORIES: list[object] = []
+
+
+def _prepare_windows_dll_search() -> None:
+    """Register optional GGML runtime directories for Windows DLL loading."""
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return
+    directories = []
+    configured = os.environ.get("STRATA_IQ_LIBRARY", "").strip()
+    if configured:
+        directories.append(Path(configured).expanduser().resolve().parent)
+    runtime = os.environ.get("STRATA_GGML_RUNTIME_DIR", "").strip()
+    if runtime:
+        directories.append(Path(runtime).expanduser().resolve())
+    for directory in directories:
+        if directory.is_dir():
+            try:
+                _DLL_DIRECTORIES.append(os.add_dll_directory(str(directory)))
+            except OSError:
+                continue
 
 
 def _load() -> Optional[ctypes.CDLL]:
@@ -17,6 +37,7 @@ def _load() -> Optional[ctypes.CDLL]:
     if _LIBRARY is not None:
         return _LIBRARY
     configured = os.environ.get("STRATA_IQ_LIBRARY", "").strip()
+    _prepare_windows_dll_search()
     candidates = [Path(configured)] if configured else []
     for root in (Path(__file__).resolve().parents[3] / "native", Path.home() / ".ai-runner" / "bin"):
         candidates.extend(root / name for name in ("strata_iq.dll", "libstrata_iq.so", "libstrata_iq.dylib"))
