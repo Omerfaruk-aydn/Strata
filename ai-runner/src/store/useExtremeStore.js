@@ -66,6 +66,18 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  inspectStrataModel: async (modelFile) => {
+    try {
+      const res = await apiFetch(`/api/ultra/inspect/${encodeURIComponent(modelFile)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata model inspection failed');
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   estimateUltraMemory: async (valueCount = 4096, groupSize = 128) => {
     try {
       const res = await apiFetch('/api/ultra/memory', {

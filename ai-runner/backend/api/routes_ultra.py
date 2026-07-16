@@ -183,6 +183,37 @@ async def ultra_layout(model_file: str):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.get("/inspect/{model_file}")
+async def ultra_inspect(model_file: str):
+    """Return a preflight summary for a Strata container before execution."""
+    root = Path(model_manager.model_dir).resolve()
+    path = (root / model_file).resolve()
+    if path.parent != root or path.suffix.lower() != ".strata" or not path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        with StrataContainerReader(path) as reader:
+            records = list(reader.read_tensors())
+            codec_counts: dict[str, int] = {}
+            packed_bytes = 0
+            scales_bytes = 0
+            for record in records:
+                codec_counts[record.codec] = codec_counts.get(record.codec, 0) + 1
+                packed_bytes += len(record.payload)
+                scales_bytes += len(record.scales)
+            return {
+                "file": path.name,
+                "size_bytes": path.stat().st_size,
+                "tensor_count": len(records),
+                "codec_counts": codec_counts,
+                "packed_bytes": packed_bytes,
+                "scales_bytes": scales_bytes,
+                "metadata": reader.manifest.get("metadata", {}),
+                "layout": discover_layout(reader.tensor_names()),
+            }
+    except (OSError, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/memory")
 async def memory(request: MemoryRequest):
     return {"report": kv_memory_report(request.value_count, request.group_size)}
