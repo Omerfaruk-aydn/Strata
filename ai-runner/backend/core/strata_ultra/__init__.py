@@ -24,6 +24,7 @@ from .tokenizer import ByteTokenizer, GGUFTokenizer
 from .sparse_codec import decode_sparse05, encode_sparse05
 from .layout import discover_layout
 from .quality import tensor_quality
+from .chat import StrataChatMessage, format_chat_prompt
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -67,4 +68,6 @@ __all__ = [
     "decode_sparse05",
     "discover_layout",
     "tensor_quality",
+    "StrataChatMessage",
+    "format_chat_prompt",
 ]
