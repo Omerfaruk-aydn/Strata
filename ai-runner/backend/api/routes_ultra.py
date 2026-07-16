@@ -636,7 +636,13 @@ async def strata_generate_stream(request: GenerateRequest):
             with _strata_generation_state_lock:
                 if _strata_generation_cancel is cancel_event:
                     _strata_generation_cancel = None
-            await task
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=5.0)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                # The native/CPU worker is cooperative, but cleanup must not
+                # hold an HTTP connection forever if an optional backend is
+                # slow to observe the cancellation event.
+                pass
 
     return StreamingResponse(body(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
