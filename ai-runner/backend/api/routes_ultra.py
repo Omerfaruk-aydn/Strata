@@ -84,6 +84,7 @@ class GraphRunRequest(BaseModel):
     vector: List[float] = Field(min_length=1, max_length=1_000_000)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
 
 
 class AttentionStepRequest(BaseModel):
