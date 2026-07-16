@@ -30,6 +30,7 @@ def test_f32_gguf_converts_to_strata(tmp_path: Path):
     with StrataContainerReader(target) as reader:
         assert reader.tensor_names() == ["test.weight"]
         assert "conversion_quality" in reader.manifest["metadata"]
+        assert "tokenizer_metadata" in reader.manifest["metadata"]
 
 
 def test_f16_gguf_converts_to_strata(tmp_path: Path):

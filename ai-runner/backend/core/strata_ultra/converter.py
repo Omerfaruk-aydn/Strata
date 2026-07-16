@@ -8,6 +8,7 @@ silently treating those bytes as floats would create a corrupt model.
 from __future__ import annotations
 
 import os
+import json
 import struct
 from pathlib import Path
 from typing import BinaryIO
@@ -224,6 +225,20 @@ def _read_string(stream: BinaryIO) -> str:
     return _read_exact(stream, size).decode("utf-8")
 
 
+def _extract_tokenizer_metadata(metadata: dict) -> dict:
+    """Keep JSON-safe tokenizer contract fields in the Strata manifest."""
+    selected = {}
+    for key, value in metadata.items():
+        if not key.startswith("tokenizer.ggml."):
+            continue
+        try:
+            json.dumps(value)
+        except (TypeError, ValueError):
+            continue
+        selected[key] = value
+    return selected
+
+
 def convert_gguf_to_strata(
     source: str | Path,
     target: str | Path,
@@ -252,6 +267,7 @@ def convert_gguf_to_strata(
         if version not in {1, 2, 3}:
             raise ValueError(f"Unsupported GGUF version: {version}")
         metadata = _extract_metadata(stream, metadata_count, version)
+        tokenizer_metadata = _extract_tokenizer_metadata(metadata)
         infos = []
         for _ in range(tensor_count):
             name = _read_string(stream)
@@ -271,6 +287,7 @@ def convert_gguf_to_strata(
             "source_version": version,
             "architecture": metadata.get("general.architecture", ""),
             "group_size": group_size,
+            "tokenizer_metadata": tokenizer_metadata,
         })
         converted = 0
         quality_totals = {"mse": 0.0, "rmse": 0.0, "max_abs_error": 0.0, "cosine_similarity": 0.0}
