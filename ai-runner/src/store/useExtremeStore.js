@@ -54,6 +54,18 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  fetchStrataLayout: async (modelFile) => {
+    try {
+      const res = await apiFetch(`/api/ultra/layout/${encodeURIComponent(modelFile)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata layout discovery failed');
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   estimateUltraMemory: async (valueCount = 4096, groupSize = 128) => {
     try {
       const res = await apiFetch('/api/ultra/memory', {

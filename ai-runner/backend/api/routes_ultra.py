@@ -23,6 +23,7 @@ from ..core.strata_ultra import (
     LowBitTransformerBlock,
     GenerationConfig,
     StrataGenerator,
+    discover_layout,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -158,6 +159,19 @@ async def ultra_models():
         except (OSError, ValueError, KeyError) as exc:
             models.append({"file": path.name, "valid": False, "error": str(exc)[:500]})
     return {"models": models, "directory": str(root)}
+
+
+@router.get("/layout/{model_file}")
+async def ultra_layout(model_file: str):
+    root = Path(model_manager.model_dir).resolve()
+    path = (root / model_file).resolve()
+    if path.parent != root or path.suffix.lower() != ".strata" or not path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        with StrataContainerReader(path) as reader:
+            return discover_layout(reader.tensor_names())
+    except (OSError, ValueError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/memory")
