@@ -19,6 +19,7 @@ from .ternary import decode_ternary, encode_ternary
 from .sparse_codec import decode_sparse05, encode_sparse05
 from .quality import tensor_quality
 from .iq_registry import get_iq_codec
+from .iq_native import decode_iq_native, native_iq_available
 
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
@@ -307,14 +308,20 @@ def convert_gguf_to_strata(
             "tokenizer_metadata": tokenizer_metadata,
         })
         converted = 0
+        native_iq = native_iq_available()
+        base_supported_types = {
+            GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0,
+            GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K,
+            GGML_TYPE_Q6_K, GGML_TYPE_IQ4_NL,
+        }
         quality_totals = {"mse": 0.0, "rmse": 0.0, "max_abs_error": 0.0, "cosine_similarity": 0.0}
         for name, dims, tensor_type, offset in infos:
             iq_codec = get_iq_codec(tensor_type)
-            if iq_codec is not None and not iq_codec.decodable:
+            if iq_codec is not None and not iq_codec.decodable and not native_iq:
                 raise ValueError(
                     f"Tensor {name} uses {iq_codec.name}; its verified decoder is not available yet"
                 )
-            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_NL}:
+            if tensor_type not in base_supported_types and not (iq_codec and native_iq):
                 supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
@@ -338,6 +345,10 @@ def convert_gguf_to_strata(
                 byte_count = (count // _QK_K) * 176
             elif tensor_type == GGML_TYPE_IQ4_NL:
                 byte_count = (count // _QK) * 18
+            elif iq_codec is not None and native_iq:
+                if count % iq_codec.block_values:
+                    raise ValueError(f"Tensor {name} is not aligned to {iq_codec.block_values}-value {iq_codec.name} blocks")
+                byte_count = (count // iq_codec.block_values) * int(iq_codec.block_bytes or 0)
             else:
                 byte_count = (count // _QK_K) * 210
             if byte_count > max_tensor_bytes or data_start + offset + byte_count > file_size:
@@ -362,6 +373,8 @@ def convert_gguf_to_strata(
                 values = _decode_q5_k(raw, count)
             elif tensor_type == GGML_TYPE_IQ4_NL:
                 values = _decode_iq4_nl(raw, count)
+            elif iq_codec is not None and native_iq:
+                values = decode_iq_native(tensor_type, raw, count)
             else:
                 values = _decode_q6_k(raw, count)
             if target_codec == "sparse05":

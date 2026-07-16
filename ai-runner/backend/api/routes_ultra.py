@@ -145,14 +145,19 @@ class GenerateRequest(BaseModel):
 
 @router.get("/capabilities")
 async def capabilities():
+    native_iq = native_iq_available()
+    source_codecs = ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "IQ4_NL"]
+    if native_iq:
+        source_codecs.extend(["IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S"])
+    unsupported_iq = [item["name"] for item in iq_capability_report() if item["name"] not in source_codecs]
     return {
         "runtime": "strata-ultra",
         "format_version": 1,
         "weight_codecs": ["ternary-q05", "sparse05"],
-        "source_gguf_codecs": ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "IQ4_NL"],
-        "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3", "IQ4_XS"],
+        "source_gguf_codecs": source_codecs,
+        "unsupported_source_codecs": unsupported_iq,
         "iq_codecs": iq_capability_report(),
-        "native_iq_decoder": native_iq_available(),
+        "native_iq_decoder": native_iq,
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "execution_backends": {
