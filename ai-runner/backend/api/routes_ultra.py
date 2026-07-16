@@ -370,14 +370,26 @@ async def generate_text(request: GenerateRequest):
     try:
         def execute():
             with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
+                with StrataContainerReader(model_path) as reader:
+                    tensor_names = set(reader.tensor_names())
+                    discovered = discover_layout(list(tensor_names))
+                if request.embedding_tensor not in tensor_names:
+                    raise ValueError(f"embedding tensor bulunamadı: {request.embedding_tensor}")
+                if request.output_tensor not in tensor_names:
+                    raise ValueError(f"output tensor bulunamadı: {request.output_tensor}")
                 blocks = []
-                for prefix in request.block_prefixes:
+                prefixes = list(request.block_prefixes)
+                if not prefixes:
+                    prefixes = [item["prefix"] for item in discovered["blocks"] if item["complete"]]
+                for prefix in prefixes:
                     names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
                     blocks.append(LowBitTransformerBlock(
                         runtime, q_proj=names["q"], k_proj=names["k"], v_proj=names["v"], o_proj=names["o"],
                         gate_proj=names["gate"], up_proj=names["up"], down_proj=names["down"], width=request.width,
                         context_capacity=request.context_capacity, kv_mode=request.kv_mode,
                     ))
+                if not blocks:
+                    raise ValueError("no complete transformer blocks discovered")
                 generator = StrataGenerator(
                     runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor,
                 )
