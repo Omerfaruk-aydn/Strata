@@ -23,6 +23,10 @@ cmake -S native -B native/build -DSTRATA_ENABLE_CUDA=ON
 cmake --build native/build --config Release
 ```
 
+For a reproducible deployment build, set the GPU architecture explicitly,
+for example `-DSTRATA_CUDA_ARCHITECTURES=86;89`. Leaving it empty lets CMake
+choose its default architecture policy.
+
 Set `STRATA_CUDA_LIBRARY` to the resulting shared library when it is outside
 the standard search paths. The API reports the backend under
 `/api/ultra/capabilities`; selecting `cuda` without the library returns a

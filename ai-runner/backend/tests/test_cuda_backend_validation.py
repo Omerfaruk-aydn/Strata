@@ -22,3 +22,18 @@ def test_cuda_rejects_non_finite_input_before_loading_library(monkeypatch):
     monkeypatch.setattr(cuda_backend, "_load", lambda: None)
     with pytest.raises(ValueError, match="finite"):
         cuda_backend.matvec_cuda(_record(), [float("nan"), 1.0])
+
+
+@pytest.mark.parametrize("field", ["rows", "cols", "group_size"])
+def test_cuda_rejects_values_outside_abi_uint32(monkeypatch, field):
+    monkeypatch.setattr(cuda_backend, "_load", lambda: None)
+    record = _record()
+    setattr(record, field, 0x1_0000_0000)
+    with pytest.raises(ValueError, match=field):
+        cuda_backend.matvec_cuda(record, [1.0, 1.0])
+
+
+def test_cuda_rejects_non_finite_scales_before_loading_library(monkeypatch):
+    monkeypatch.setattr(cuda_backend, "_load", lambda: object())
+    with pytest.raises(ValueError, match="scale"):
+        cuda_backend.matvec_cuda(_record(scales=bytes.fromhex("0000807f")), [1.0, 1.0])

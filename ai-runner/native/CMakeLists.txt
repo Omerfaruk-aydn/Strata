@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(strata_native LANGUAGES CXX)
 
 option(STRATA_ENABLE_CUDA "Build the CUDA Strata backend" OFF)
+set(STRATA_CUDA_ARCHITECTURES "" CACHE STRING "CUDA architectures, e.g. 75;86;89;90")
 set(STRATA_GGML_ROOT "" CACHE PATH "Path to a llama.cpp ggml source checkout")
 set(STRATA_GGML_LIBRARY "" CACHE FILEPATH "Explicit path to the GGML library for the IQ bridge")
 
@@ -14,6 +15,9 @@ if(STRATA_ENABLE_CUDA)
     POSITION_INDEPENDENT_CODE ON
     OUTPUT_NAME "strata_cuda"
   )
+  if(STRATA_CUDA_ARCHITECTURES)
+    set_property(TARGET strata_cuda PROPERTY CUDA_ARCHITECTURES "${STRATA_CUDA_ARCHITECTURES}")
+  endif()
   target_compile_definitions(strata_cuda PRIVATE STRATA_CUDA_EXPORTS)
 endif()
 

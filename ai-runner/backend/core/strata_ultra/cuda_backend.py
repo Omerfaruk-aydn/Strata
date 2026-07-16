@@ -49,6 +49,10 @@ def cuda_available() -> bool:
 
 def matvec_cuda(record, vector: list[float]) -> list[float]:
     """Execute one ternary tensor matvec through the optional native ABI."""
+    for field in ("rows", "cols", "group_size"):
+        value = getattr(record, field)
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 0xFFFFFFFF:
+            raise ValueError(f"{field} must be an integer in the uint32 range")
     if record.codec != "ternary-q05":
         raise ValueError("CUDA backend currently accepts only ternary-q05 tensors")
     if len(vector) != record.cols:
@@ -66,6 +70,8 @@ def matvec_cuda(record, vector: list[float]) -> list[float]:
     if len(record.scales) != scale_count * 4:
         raise ValueError(f"invalid scale table for tensor {record.name}")
     scales = (ctypes.c_float * scale_count).from_buffer_copy(record.scales)
+    if any(not math.isfinite(value) for value in scales):
+        raise ValueError(f"invalid non-finite scale table for tensor {record.name}")
     values = (ctypes.c_float * record.cols)(*vector)
     output = (ctypes.c_float * record.rows)()
     status = library.strata_cuda_ternary_matvec(
