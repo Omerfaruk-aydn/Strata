@@ -230,6 +230,7 @@ def convert_gguf_to_strata(
     group_size: int = 128,
     max_tensor_bytes: int = 2 * 1024 * 1024 * 1024,
     target_codec: str = "ternary-q05",
+    sparse_threshold: float = 0.125,
 ) -> dict:
     """Convert an F32 GGUF into a checksummed experimental STRATA-Q0.5 file."""
     source = Path(source).resolve()
@@ -240,6 +241,8 @@ def convert_gguf_to_strata(
         raise ValueError("group_size and max_tensor_bytes must be positive")
     if target_codec not in {"ternary-q05", "sparse05"}:
         raise ValueError("target_codec must be 'ternary-q05' or 'sparse05'")
+    if sparse_threshold < 0:
+        raise ValueError("sparse_threshold must be non-negative")
 
     with source.open("rb") as stream:
         if _read_exact(stream, 4) != GGUF_MAGIC:
@@ -317,7 +320,7 @@ def convert_gguf_to_strata(
             else:
                 values = _decode_q6_k(raw, count)
             if target_codec == "sparse05":
-                packed, scales = encode_sparse05(values, group_size)
+                packed, scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
             else:
                 packed, scales = encode_ternary(values, group_size)
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
@@ -333,4 +336,5 @@ def convert_gguf_to_strata(
         "source_bytes": os.path.getsize(source),
         "target_bytes": os.path.getsize(target),
         "codec": target_codec,
+        "sparse_threshold": sparse_threshold if target_codec == "sparse05" else None,
     }

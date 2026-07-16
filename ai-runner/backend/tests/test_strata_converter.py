@@ -126,5 +126,6 @@ def test_f32_gguf_can_target_sparse05(tmp_path: Path):
     source = tmp_path / "tiny-sparse.gguf"
     target = tmp_path / "tiny-sparse.strata"
     _write_float_gguf(source, 0, (0.0, 0.0, 2.0, 0.0))
-    result = convert_gguf_to_strata(source, target, group_size=4, target_codec="sparse05")
+    result = convert_gguf_to_strata(source, target, group_size=4, target_codec="sparse05", sparse_threshold=0.25)
     assert result["codec"] == "sparse05"
+    assert result["sparse_threshold"] == 0.25
