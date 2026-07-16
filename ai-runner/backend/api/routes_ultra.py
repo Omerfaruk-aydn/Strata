@@ -12,7 +12,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..core.strata_ultra import StrataRuntime, convert_gguf_to_strata, kv_memory_report, run_codec_benchmark
+from ..core.strata_ultra import (
+    StrataContainerReader,
+    StrataRuntime,
+    convert_gguf_to_strata,
+    kv_memory_report,
+    run_codec_benchmark,
+)
 from ..models.model_manager import model_manager
 from .auth import require_api_access
 
@@ -66,6 +72,26 @@ async def capabilities():
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "status": "experimental",
     }
+
+
+@router.get("/models")
+async def ultra_models():
+    """List validated Strata containers in the configured model directory."""
+    root = Path(model_manager.model_dir).resolve()
+    models = []
+    for path in sorted(root.glob("*.strata")):
+        try:
+            with StrataContainerReader(path) as reader:
+                models.append({
+                    "file": path.name,
+                    "size_bytes": path.stat().st_size,
+                    "tensor_count": len(reader.tensor_names()),
+                    "metadata": reader.manifest.get("metadata", {}),
+                    "valid": True,
+                })
+        except (OSError, ValueError, KeyError) as exc:
+            models.append({"file": path.name, "valid": False, "error": str(exc)[:500]})
+    return {"models": models, "directory": str(root)}
 
 
 @router.post("/memory")

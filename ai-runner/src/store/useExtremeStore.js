@@ -12,6 +12,7 @@ const useExtremeStore = create((set, get) => ({
   ultraCapabilities: null,
   ultraMemoryReport: null,
   ultraBenchmark: null,
+  ultraModels: [],
   isLoading: false,
   isBenchmarking: false,
   isQuantizing: false,
@@ -38,6 +39,18 @@ const useExtremeStore = create((set, get) => ({
     } catch (error) {
       set({ error: error.message });
       return null;
+    }
+  },
+
+  fetchUltraModels: async () => {
+    try {
+      const res = await apiFetch('/api/ultra/models');
+      const data = await res.json();
+      set({ ultraModels: data.models || [] });
+      return data.models || [];
+    } catch (error) {
+      set({ error: error.message });
+      return [];
     }
   },
 
