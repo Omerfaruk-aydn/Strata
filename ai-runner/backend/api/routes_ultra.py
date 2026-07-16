@@ -92,6 +92,7 @@ class GraphRunRequest(BaseModel):
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
     backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+    prefetch: bool = True
 
 
 class AttentionStepRequest(BaseModel):
@@ -287,7 +288,7 @@ async def run_graph(request: GraphRunRequest):
     try:
         def execute():
             with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
-                graph = StrataGraph(runtime, [LinearNode(node.tensor_name, node.activation) for node in request.nodes])
+                graph = StrataGraph(runtime, [LinearNode(node.tensor_name, node.activation) for node in request.nodes], prefetch=request.prefetch)
                 result = graph.run(request.vector)
                 return {"values": result, "nodes": len(request.nodes), "pager": {
                     "resident_pages": runtime.pager.resident_pages,

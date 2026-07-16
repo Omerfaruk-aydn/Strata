@@ -17,6 +17,7 @@ async def test_graph_api_runs_nodes(tmp_path: Path, monkeypatch):
         model_file="graph.strata",
         nodes=[routes_ultra.GraphNodeRequest(tensor_name="a", activation="relu")],
         vector=[2.0, -3.0],
+        prefetch=False,
     )
     result = await routes_ultra.run_graph(request)
     assert result["values"] == [2.0, 0.0]

@@ -201,6 +201,7 @@ const useExtremeStore = create((set, get) => ({
           memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
           resident_window: options.residentWindow || 2,
           backend: options.backend || 'auto',
+          prefetch: options.prefetch ?? true,
         }),
       });
       const data = await res.json();
