@@ -13,6 +13,7 @@ from .benchmark import run_codec_benchmark
 from .container import StrataContainerReader, StrataContainerWriter, TensorRecord
 from .converter import convert_gguf_to_strata
 from .executor import StrataRuntime, matvec
+from .kv_runtime import KVSnapshot, UltraKVCache
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -33,4 +34,6 @@ __all__ = [
     "convert_gguf_to_strata",
     "StrataRuntime",
     "matvec",
+    "KVSnapshot",
+    "UltraKVCache",
 ]
