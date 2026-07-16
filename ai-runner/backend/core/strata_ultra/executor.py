@@ -13,9 +13,13 @@ from typing import Callable
 
 from .container import StrataContainerReader, TensorRecord
 from .paging import LayerPager
+from .sparse_codec import decode_sparse05
 
 
 def _tensor_values(record: TensorRecord) -> list[float]:
+    if record.codec == "sparse05":
+        scales = struct.unpack(f"<{len(record.scales) // 4}f", record.scales)
+        return decode_sparse05(record.payload, scales, record.rows * record.cols, record.group_size)
     if record.codec != "ternary-q05":
         raise ValueError(f"unsupported Strata tensor codec: {record.codec}")
     count = record.rows * record.cols

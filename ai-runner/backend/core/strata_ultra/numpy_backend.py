@@ -17,6 +17,8 @@ def numpy_available() -> bool:
 
 def matmul_fast(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]:
     """Vectorized Q0.5 matmul when NumPy is installed, with safe fallback."""
+    if record.codec != "ternary-q05":
+        return matmul(record, matrix)
     if np is None:
         return matmul(record, matrix)
     count = record.rows * record.cols

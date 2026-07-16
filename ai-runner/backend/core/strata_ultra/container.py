@@ -41,7 +41,7 @@ class StrataContainerWriter:
     def add_tensor(self, record: TensorRecord) -> None:
         if not record.name or record.rows <= 0 or record.cols <= 0 or record.group_size <= 0:
             raise ValueError("invalid tensor record")
-        if record.codec != "ternary-q05":
+        if record.codec not in {"ternary-q05", "sparse05"}:
             raise ValueError(f"unsupported Strata codec: {record.codec}")
         if any(existing.name == record.name for existing in self._records):
             raise ValueError(f"duplicate tensor: {record.name}")
