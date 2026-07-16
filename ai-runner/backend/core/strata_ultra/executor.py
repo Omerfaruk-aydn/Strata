@@ -101,8 +101,8 @@ class StrataRuntime:
     """Minimal model runtime with a bounded resident tensor window."""
 
     def __init__(self, model_path: str | Path, memory_budget_bytes: int, resident_window: int = 2, backend: str = "auto"):
-        if backend not in {"auto", "python", "numpy"}:
-            raise ValueError("backend must be 'auto', 'python', or 'numpy'")
+        if backend not in {"auto", "python", "numpy", "cuda"}:
+            raise ValueError("backend must be 'auto', 'python', 'numpy', or 'cuda'")
         self.reader = StrataContainerReader(model_path)
         records = {record.name: record for record in self.reader.read_tensors()}
         if not records:
@@ -118,12 +118,18 @@ class StrataRuntime:
 
     def tensor_matvec(self, tensor_name: str, vector: list[float]) -> list[float]:
         record = self.pager.get(tensor_name)
+        if self.backend == "cuda":
+            from .cuda_backend import matvec_cuda
+            return matvec_cuda(record, vector)
         if self.backend == "python":
             return matvec(record, vector)
         return self.tensor_matmul(tensor_name, [vector])[0]
 
     def tensor_matmul(self, tensor_name: str, matrix: list[list[float]]) -> list[list[float]]:
         record = self.pager.get(tensor_name)
+        if self.backend == "cuda":
+            from .cuda_backend import matvec_cuda
+            return [matvec_cuda(record, vector) for vector in matrix]
         if self.backend in {"auto", "numpy"}:
             from .numpy_backend import matmul_fast, numpy_available
             if self.backend == "numpy" and not numpy_available():

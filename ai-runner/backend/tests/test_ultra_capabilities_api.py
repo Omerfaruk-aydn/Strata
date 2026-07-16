@@ -10,3 +10,5 @@ async def test_capabilities_report_active_tokenizer_backend():
     result = await routes_ultra.capabilities()
     expected = "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback"
     assert result["tokenizer_backend"] == expected
+    assert set(result["execution_backends"]) == {"python", "numpy", "cuda"}
+    assert result["execution_backends"]["python"]["available"] is True

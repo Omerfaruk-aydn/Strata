@@ -31,6 +31,7 @@ from ..core.strata_ultra import (
     kv_memory_report,
     run_codec_benchmark,
 )
+from ..core.strata_ultra.cuda_backend import cuda_available
 from ..models.model_manager import model_manager
 from .auth import require_api_access
 
@@ -76,7 +77,7 @@ class MatvecRequest(BaseModel):
     vector: List[float] = Field(min_length=1, max_length=1_000_000)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
-    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
 
 
 class RuntimeBenchmarkRequest(MatvecRequest):
@@ -94,7 +95,7 @@ class GraphRunRequest(BaseModel):
     vector: List[float] = Field(min_length=1, max_length=1_000_000)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
-    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
     prefetch: bool = True
 
 
@@ -122,7 +123,7 @@ class TransformerStepRequest(BaseModel):
     hidden: List[float] = Field(min_length=1, max_length=16_384)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
-    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
 
 
 class GenerateRequest(BaseModel):
@@ -137,7 +138,7 @@ class GenerateRequest(BaseModel):
     max_new_tokens: int = Field(default=16, ge=1, le=1024)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
-    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
 
 
 @router.get("/capabilities")
@@ -150,6 +151,11 @@ async def capabilities():
         "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3"],
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
+        "execution_backends": {
+            "python": {"available": True, "active": True},
+            "numpy": {"available": True, "active": False},
+            "cuda": {"available": cuda_available(), "active": False},
+        },
         "tokenizer_backend": "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback",
         "status": "experimental",
     }
