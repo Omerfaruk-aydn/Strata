@@ -86,12 +86,12 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
-  convertToStrata: async (modelId, targetName = null, groupSize = 128) => {
+  convertToStrata: async (modelId, targetName = null, groupSize = 128, targetCodec = 'ternary-q05') => {
     try {
       const res = await apiFetch(`/api/ultra/convert/${encodeURIComponent(modelId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_name: targetName, group_size: groupSize }),
+        body: JSON.stringify({ target_name: targetName, group_size: groupSize, target_codec: targetCodec }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Strata conversion failed');

@@ -60,6 +60,7 @@ class ConvertRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     target_name: Optional[str] = Field(default=None, max_length=255, pattern=r"^[A-Za-z0-9._-]+$")
     group_size: int = Field(default=128, ge=8, le=4096)
+    target_codec: str = Field(default="ternary-q05", pattern=r"^(ternary-q05|sparse05)$")
 
 
 class MatvecRequest(BaseModel):
@@ -356,7 +357,7 @@ async def convert_model(model_id: str, request: ConvertRequest):
         raise HTTPException(status_code=409, detail="Strata çıktı dosyası zaten mevcut.")
     try:
         result = await __import__("asyncio").to_thread(
-            convert_gguf_to_strata, source, target, group_size=request.group_size
+            convert_gguf_to_strata, source, target, group_size=request.group_size, target_codec=request.target_codec
         )
         return {"conversion": result}
     except Exception as exc:

@@ -15,6 +15,7 @@ from typing import BinaryIO
 from ..model_loader import _extract_metadata, _read_exact
 from .container import StrataContainerWriter, TensorRecord
 from .ternary import encode_ternary
+from .sparse_codec import encode_sparse05
 
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
@@ -154,6 +155,7 @@ def convert_gguf_to_strata(
     *,
     group_size: int = 128,
     max_tensor_bytes: int = 2 * 1024 * 1024 * 1024,
+    target_codec: str = "ternary-q05",
 ) -> dict:
     """Convert an F32 GGUF into a checksummed experimental STRATA-Q0.5 file."""
     source = Path(source).resolve()
@@ -162,6 +164,8 @@ def convert_gguf_to_strata(
         raise FileNotFoundError("Source GGUF file was not found")
     if group_size <= 0 or max_tensor_bytes <= 0:
         raise ValueError("group_size and max_tensor_bytes must be positive")
+    if target_codec not in {"ternary-q05", "sparse05"}:
+        raise ValueError("target_codec must be 'ternary-q05' or 'sparse05'")
 
     with source.open("rb") as stream:
         if _read_exact(stream, 4) != GGUF_MAGIC:
@@ -230,11 +234,14 @@ def convert_gguf_to_strata(
                 values = _decode_q5_k(raw, count)
             else:
                 values = _decode_q6_k(raw, count)
-            packed, scales = encode_ternary(values, group_size)
+            if target_codec == "sparse05":
+                packed, scales = encode_sparse05(values, group_size)
+            else:
+                packed, scales = encode_ternary(values, group_size)
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
             rows = int(dims[0])
             cols = int(count // rows)
-            writer.add_tensor(TensorRecord(name, rows, cols, group_size, "ternary-q05", packed, scales_raw))
+            writer.add_tensor(TensorRecord(name, rows, cols, group_size, target_codec, packed, scales_raw))
             converted += 1
         writer.write(target)
     return {
@@ -243,5 +250,5 @@ def convert_gguf_to_strata(
         "tensor_count": converted,
         "source_bytes": os.path.getsize(source),
         "target_bytes": os.path.getsize(target),
-        "codec": "ternary-q05",
+        "codec": target_codec,
     }
