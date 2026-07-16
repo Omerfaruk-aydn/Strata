@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .executor import StrataRuntime
 from .tokenizer import ByteTokenizer
@@ -13,6 +13,15 @@ from .transformer import LowBitTransformer
 class GenerationConfig:
     max_new_tokens: int = 32
     eos_token: int | None = None
+    stop_token_ids: tuple[int, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if self.max_new_tokens < 1 or self.max_new_tokens > 4096:
+            raise ValueError("max_new_tokens must be between 1 and 4096")
+        if self.eos_token is not None and self.eos_token < 0:
+            raise ValueError("eos_token must be non-negative")
+        if any(token < 0 for token in self.stop_token_ids):
+            raise ValueError("stop_token_ids must contain non-negative token IDs")
 
 
 class StrataGenerator:
@@ -42,6 +51,6 @@ class StrataGenerator:
             logits = self.runtime.tensor_matvec(self.output, hidden)
             current = max(range(len(logits)), key=logits.__getitem__)
             generated.append(current)
-            if config.eos_token is not None and current == config.eos_token:
+            if current == config.eos_token or current in config.stop_token_ids:
                 break
         return prompt + self.tokenizer.decode(generated)
