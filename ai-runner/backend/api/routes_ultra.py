@@ -21,6 +21,8 @@ from ..core.strata_ultra import (
     LowBitAttention,
     LowBitTransformer,
     LowBitTransformerBlock,
+    GenerationConfig,
+    StrataGenerator,
     convert_gguf_to_strata,
     kv_memory_report,
     run_codec_benchmark,
@@ -103,6 +105,21 @@ class TransformerStepRequest(BaseModel):
     context_capacity: int = Field(default=2048, ge=1, le=1_000_000)
     kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
     hidden: List[float] = Field(min_length=1, max_length=16_384)
+    memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
+    resident_window: int = Field(default=2, ge=1, le=1024)
+    backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
+
+
+class GenerateRequest(BaseModel):
+    model_file: str = Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9._-]+\.strata$")
+    block_prefixes: List[str] = Field(min_length=1, max_length=1024)
+    embedding_tensor: str = Field(min_length=1, max_length=1024)
+    output_tensor: str = Field(min_length=1, max_length=1024)
+    width: int = Field(ge=1, le=16_384)
+    context_capacity: int = Field(default=2048, ge=1, le=1_000_000)
+    kv_mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05)$")
+    prompt: str = Field(default="", max_length=100_000)
+    max_new_tokens: int = Field(default=16, ge=1, le=1024)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
     backend: str = Field(default="auto", pattern=r"^(auto|python|numpy)$")
@@ -254,6 +271,33 @@ async def transformer_step(request: TransformerStepRequest):
                 }}
         return await asyncio.to_thread(execute)
     except (ValueError, MemoryError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generate")
+async def generate_text(request: GenerateRequest):
+    root = Path(model_manager.model_dir).resolve()
+    model_path = (root / request.model_file).resolve()
+    if model_path.parent != root or not model_path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        def execute():
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
+                blocks = []
+                for prefix in request.block_prefixes:
+                    names = {part: f"{prefix}.{part}" for part in ("q", "k", "v", "o", "gate", "up", "down")}
+                    blocks.append(LowBitTransformerBlock(
+                        runtime, q_proj=names["q"], k_proj=names["k"], v_proj=names["v"], o_proj=names["o"],
+                        gate_proj=names["gate"], up_proj=names["up"], down_proj=names["down"], width=request.width,
+                        context_capacity=request.context_capacity, kv_mode=request.kv_mode,
+                    ))
+                generator = StrataGenerator(
+                    runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor,
+                )
+                text = generator.generate(request.prompt, GenerationConfig(request.max_new_tokens))
+                return {"text": text, "tokenizer": "byte-fallback", "blocks": len(blocks), "backend": runtime.backend}
+        return await asyncio.to_thread(execute)
+    except (ValueError, MemoryError, KeyError, IndexError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

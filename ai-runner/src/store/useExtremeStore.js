@@ -221,6 +221,35 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  generateStrataText: async (options = {}) => {
+    try {
+      const res = await apiFetch('/api/ultra/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_file: options.modelFile,
+          block_prefixes: options.blockPrefixes || [],
+          embedding_tensor: options.embeddingTensor,
+          output_tensor: options.outputTensor,
+          width: options.width,
+          prompt: options.prompt || '',
+          max_new_tokens: options.maxNewTokens || 16,
+          context_capacity: options.contextCapacity || 2048,
+          kv_mode: options.kvMode || 'sign1',
+          memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
+          resident_window: options.residentWindow || 2,
+          backend: options.backend || 'auto',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata generation failed');
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   fetchPresets: async () => {
     try {
       const res = await apiFetch('/api/extreme/presets');
