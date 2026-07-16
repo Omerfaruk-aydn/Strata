@@ -20,3 +20,4 @@ def test_graph_runs_sequential_low_bit_linear_layers(tmp_path: Path):
     with StrataRuntime(target, 1024, resident_window=1) as runtime:
         graph = StrataGraph(runtime, [LinearNode("layer.0", "relu"), LinearNode("layer.1")])
         assert graph.run([2.0, -3.0]) == [2.0, -2.0]
+        assert any(event.action == "load" and event.layer_id == "layer.1" for event in runtime.pager.events)
