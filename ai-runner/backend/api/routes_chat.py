@@ -200,10 +200,14 @@ async def _non_streaming_completion(
     try:
         prompt_tokens = engine.count_prompt_tokens(messages)
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
+        generation_future = loop.run_in_executor(
             None,
             lambda: engine.generate_sync(messages, params)
         )
+        timeout = None
+        if engine._config and engine._config.generation_timeout_s > 0:
+            timeout = engine._config.generation_timeout_s
+        result = await asyncio.wait_for(generation_future, timeout=timeout)
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -224,6 +228,9 @@ async def _non_streaming_completion(
                 "total_tokens": prompt_tokens + result.tokens_generated,
             },
         }
+    except asyncio.TimeoutError as exc:
+        engine.stop_generation()
+        raise HTTPException(status_code=504, detail="Model generation timed out") from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
