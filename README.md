@@ -226,6 +226,10 @@ POST /api/ultra/quality
 
 `POST /api/ultra/generate/stop` requests cooperative cancellation of the active Strata generation. It returns `idle` when no generation is running and `stopping` when a cancellation signal was delivered.
 
+`POST /api/ultra/generate` returns `text`, `generated_tokens`, and a
+`finish_reason` (`length`, `stop`, or `cancelled`) in addition to the selected
+tokenizer, block count, and execution backend.
+
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
 
 ## API
