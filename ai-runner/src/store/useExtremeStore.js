@@ -98,12 +98,12 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
-  runUltraBenchmark: async (valueCount = 16384, groupSize = 128) => {
+  runUltraBenchmark: async (valueCount = 16384, groupSize = 128, sparseThreshold = 0.125) => {
     try {
       const res = await apiFetch('/api/ultra/benchmark', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value_count: valueCount, group_size: groupSize }),
+        body: JSON.stringify({ value_count: valueCount, group_size: groupSize, sparse_threshold: sparseThreshold }),
       });
       const data = await res.json();
       set({ ultraBenchmark: data.benchmark });

@@ -49,6 +49,7 @@ class BenchmarkRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     value_count: int = Field(default=16_384, ge=128, le=10_000_000)
     group_size: int = Field(default=128, ge=8, le=4096)
+    sparse_threshold: float = Field(default=0.125, ge=0.0, le=10.0)
 
 
 class PagingPlanRequest(BaseModel):
@@ -346,7 +347,7 @@ async def generate_text(request: GenerateRequest):
 
 @router.post("/benchmark")
 async def benchmark(request: BenchmarkRequest):
-    return {"benchmark": run_codec_benchmark(request.value_count, request.group_size)}
+    return {"benchmark": run_codec_benchmark(request.value_count, request.group_size, request.sparse_threshold)}
 
 
 @router.post("/paging-plan")

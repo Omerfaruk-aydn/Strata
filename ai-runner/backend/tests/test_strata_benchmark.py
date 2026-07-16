@@ -9,3 +9,4 @@ def test_codec_benchmark_reports_real_measurements():
     assert report["packed_bytes"] < 1024 * 2
     assert report["sparse05"]["packed_bytes"] > 0
     assert report["sparse05"]["quality"]["mse"] >= 0
+    assert report["sparse05"]["threshold"] == 0.125

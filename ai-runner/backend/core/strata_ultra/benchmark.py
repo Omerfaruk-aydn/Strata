@@ -19,9 +19,11 @@ class CodecBenchmark:
     compression_vs_f16: float
 
 
-def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128) -> dict[str, Any]:
+def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128, sparse_threshold: float = 0.125) -> dict[str, Any]:
     if value_count <= 0:
         raise ValueError("value_count must be positive")
+    if sparse_threshold < 0:
+        raise ValueError("sparse_threshold must be non-negative")
     values = [((index % 17) - 8) / 8.0 for index in range(value_count)]
     start = perf_counter()
     packed, scales = encode_ternary(values, group_size)
@@ -29,7 +31,7 @@ def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128) -> dic
     start = perf_counter()
     decoded = decode_ternary(packed, scales, len(values), group_size)
     sparse_start = perf_counter()
-    sparse_packed, sparse_scales = encode_sparse05(values, group_size, threshold=0.125)
+    sparse_packed, sparse_scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
     sparse_encode_ms = (perf_counter() - sparse_start) * 1000
     sparse_start = perf_counter()
     sparse_decoded = decode_sparse05(sparse_packed, sparse_scales, len(values), group_size)
@@ -46,7 +48,7 @@ def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128) -> dic
         "compression_vs_f16": round((1 - (len(packed) + len(scales) * 4) / (value_count * 2)) * 100, 2),
         "decoded_values": len(decoded),
         "sparse05": {
-            "threshold": 0.125,
+            "threshold": sparse_threshold,
             "encode_ms": round(sparse_encode_ms, 3),
             "decode_ms": round(sparse_decode_ms, 3),
             "packed_bytes": sparse_bytes,
