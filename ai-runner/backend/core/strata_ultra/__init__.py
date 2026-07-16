@@ -18,6 +18,7 @@ from .graph import LinearNode, StrataGraph
 from .attention import LowBitAttention
 from .layers import LowBitMLP, rms_norm, silu
 from .transformer import LowBitTransformer, LowBitTransformerBlock
+from .numpy_backend import matmul_fast, numpy_available
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
@@ -49,4 +50,6 @@ __all__ = [
     "silu",
     "LowBitTransformerBlock",
     "LowBitTransformer",
+    "matmul_fast",
+    "numpy_available",
 ]
