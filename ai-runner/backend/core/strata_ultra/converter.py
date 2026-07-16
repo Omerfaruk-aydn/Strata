@@ -23,6 +23,7 @@ GGML_TYPE_Q4_0 = 2
 GGML_TYPE_Q8_0 = 8
 GGML_TYPE_Q4_K = 12
 GGML_TYPE_Q5_K = 13
+GGML_TYPE_Q6_K = 14
 _QK = 32
 _QK_K = 256
 
@@ -84,6 +85,35 @@ def _decode_q5_k(raw: bytes, count: int) -> tuple[float, ...]:
             high_mask_1 <<= 2
             high_mask_2 <<= 2
             scale_index += 2
+    return tuple(values)
+
+
+def _decode_q6_k(raw: bytes, count: int) -> tuple[float, ...]:
+    block_size = 2 + 128 + 64 + 16
+    if count % _QK_K or len(raw) != (count // _QK_K) * block_size:
+        raise ValueError("Invalid Q6_K tensor block size")
+    values = []
+    for offset in range(0, len(raw), block_size):
+        d = struct.unpack_from("<e", raw, offset)[0]
+        low = raw[offset + 2:offset + 130]
+        high = raw[offset + 130:offset + 194]
+        scales = struct.unpack_from("<16b", raw, offset + 194)
+        low_offset, high_offset, scale_offset = 0, 0, 0
+        for start in range(0, _QK_K, 128):
+            for index in range(32):
+                q1 = (low[low_offset + index] & 0x0F) | (((high[high_offset + index] >> 0) & 3) << 4)
+                q2 = (low[low_offset + index] >> 4) | (((high[high_offset + index] >> 2) & 3) << 4)
+                q3 = (low[low_offset + index + 32] & 0x0F) | (((high[high_offset + index] >> 4) & 3) << 4)
+                q4 = (low[low_offset + index + 32] >> 4) | (((high[high_offset + index] >> 6) & 3) << 4)
+                values.extend((
+                    d * scales[scale_offset] * (q1 - 32),
+                    d * scales[scale_offset + 1] * (q2 - 32),
+                    d * scales[scale_offset + 2] * (q3 - 32),
+                    d * scales[scale_offset + 3] * (q4 - 32),
+                ))
+            low_offset += 64
+            high_offset += 32
+            scale_offset += 4
     return tuple(values)
 
 
@@ -162,8 +192,8 @@ def convert_gguf_to_strata(
         })
         converted = 0
         for name, dims, tensor_type, offset in infos:
-            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K}:
-                supported = "F32/F16/Q4_0/Q8_0/Q4_K/Q5_K only in this converter"
+            if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K}:
+                supported = "F32/F16/Q4_0/Q8_0/Q4_K/Q5_K/Q6_K only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
@@ -178,8 +208,10 @@ def convert_gguf_to_strata(
                 byte_count = (count // _QK) * 34
             elif tensor_type == GGML_TYPE_Q4_K:
                 byte_count = (count // _QK_K) * 144
-            else:
+            elif tensor_type == GGML_TYPE_Q5_K:
                 byte_count = (count // _QK_K) * 176
+            else:
+                byte_count = (count // _QK_K) * 210
             if byte_count > max_tensor_bytes or data_start + offset + byte_count > file_size:
                 raise ValueError(f"Tensor {name} exceeds safe input bounds")
             stream.seek(data_start + offset)
@@ -194,8 +226,10 @@ def convert_gguf_to_strata(
                 values = _decode_q8_0(raw, count)
             elif tensor_type == GGML_TYPE_Q4_K:
                 values = _decode_q4_k(raw, count)
-            else:
+            elif tensor_type == GGML_TYPE_Q5_K:
                 values = _decode_q5_k(raw, count)
+            else:
+                values = _decode_q6_k(raw, count)
             packed, scales = encode_ternary(values, group_size)
             scales_raw = struct.pack(f"<{len(scales)}f", *scales)
             rows = int(dims[0])
