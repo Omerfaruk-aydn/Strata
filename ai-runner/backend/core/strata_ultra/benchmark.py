@@ -22,6 +22,8 @@ class CodecBenchmark:
 def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128, sparse_threshold: float = 0.125) -> dict[str, Any]:
     if value_count <= 0:
         raise ValueError("value_count must be positive")
+    if group_size <= 0 or value_count % group_size:
+        raise ValueError("group_size must be positive and divide value_count")
     if sparse_threshold < 0:
         raise ValueError("sparse_threshold must be non-negative")
     values = [((index % 17) - 8) / 8.0 for index in range(value_count)]
@@ -30,6 +32,7 @@ def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128, sparse
     encode_ms = (perf_counter() - start) * 1000
     start = perf_counter()
     decoded = decode_ternary(packed, scales, len(values), group_size)
+    decode_ms = (perf_counter() - start) * 1000
     sparse_start = perf_counter()
     sparse_packed, sparse_scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
     sparse_encode_ms = (perf_counter() - sparse_start) * 1000
@@ -38,14 +41,15 @@ def run_codec_benchmark(value_count: int = 16_384, group_size: int = 128, sparse
     sparse_decode_ms = (perf_counter() - sparse_start) * 1000
     sparse_quality = tensor_quality(values, sparse_decoded)
     sparse_bytes = len(sparse_packed) + len(sparse_scales) * 4
-    decode_ms = (perf_counter() - start) * 1000
+    packed_bytes = len(packed) + len(scales) * 4
     return {
         "codec": "ternary-q05",
         "value_count": value_count,
         "encode_ms": round(encode_ms, 3),
         "decode_ms": round(decode_ms, 3),
-        "packed_bytes": len(packed) + len(scales) * 4,
-        "compression_vs_f16": round((1 - (len(packed) + len(scales) * 4) / (value_count * 2)) * 100, 2),
+        "packed_bytes": packed_bytes,
+        "compression_vs_f16": round((1 - packed_bytes / (value_count * 2)) * 100, 2),
+        "decode_values_per_second": round(value_count / max(decode_ms / 1000, 1e-9), 2),
         "decoded_values": len(decoded),
         "sparse05": {
             "threshold": sparse_threshold,
