@@ -40,10 +40,12 @@ the standard search paths. The API reports the backend under
 `/api/ultra/capabilities`; selecting `cuda` without the library returns a
 clear runtime error rather than silently executing on the CPU.
 
-The kernel is deliberately narrow at this stage: it supports only the
-`ternary-q05` weight codec and synchronous host-buffer calls. Sparse05,
-batched streams, Vulkan, and fused transformer kernels require separate
-benchmarked implementations and are not advertised as CUDA support yet.
+The native CUDA ABI supports the `ternary-q05` weight matvec and GPU decode of
+the fixed-width `sign1` and `ternary05` KV profiles. The Python runtime selects
+those KV kernels with `backend=auto` when the DLL is available and falls back
+to the reference decoder otherwise. `sparse05`, batched streams, Vulkan, and
+fused transformer kernels require separate benchmarked implementations and
+are not advertised as CUDA support yet.
 
 ## Native IQ bridge
 

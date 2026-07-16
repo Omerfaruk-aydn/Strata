@@ -1,4 +1,5 @@
 from backend.core.strata_ultra import UltraKVCache
+from backend.core.strata_ultra import cuda_backend
 
 
 def test_kv_runtime_sliding_window_and_snapshot():
@@ -35,3 +36,13 @@ def test_sparse_threshold_is_configurable():
     values = cache.values()
     assert values[0] == 0.0
     assert values[1] != 0.0
+
+
+def test_cuda_backend_is_selectable_for_supported_kv_modes(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cuda_backend, "cuda_available", lambda: True)
+    monkeypatch.setattr(cuda_backend, "decode_kv_cuda", lambda cache: calls.append(cache.mode) or [1.0, -1.0])
+    cache = UltraKVCache(width=2, capacity_tokens=1, mode="sign1", group_size=2, backend="cuda")
+    cache.append([1.0, -1.0])
+    assert cache.values() == [1.0, -1.0]
+    assert calls == ["sign1"]

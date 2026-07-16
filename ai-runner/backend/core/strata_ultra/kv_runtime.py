@@ -24,18 +24,21 @@ class UltraKVCache:
     backends can replace the repack step with append-only bit buffers later.
     """
 
-    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", group_size: int = 128, sparse_threshold: float = 0.125):
+    def __init__(self, width: int, capacity_tokens: int, mode: str = "sign1", group_size: int = 128, sparse_threshold: float = 0.125, backend: str = "auto"):
         if width <= 0 or capacity_tokens <= 0:
             raise ValueError("width and capacity_tokens must be positive")
         if mode not in {"sign1", "ternary05", "sparse05"}:
             raise ValueError("mode must be 'sign1', 'ternary05' or 'sparse05'")
         if sparse_threshold < 0:
             raise ValueError("sparse_threshold must be non-negative")
+        if backend not in {"auto", "python", "cuda"}:
+            raise ValueError("backend must be 'auto', 'python' or 'cuda'")
         self.width = width
         self.capacity_tokens = capacity_tokens
         self.mode = mode
         self.group_size = group_size
         self.sparse_threshold = sparse_threshold
+        self.backend = backend
         self._values: list[float] = []
         self._cache: PackedKV | None = None
         self.evicted_tokens = 0
@@ -55,7 +58,13 @@ class UltraKVCache:
         self._cache = encode_kv(self._values, self.mode, self.group_size, self.sparse_threshold) if self._values else None
 
     def values(self) -> list[float]:
-        return decode_kv(self._cache) if self._cache else []
+        if not self._cache:
+            return []
+        if self.backend in {"auto", "cuda"} and self.mode in {"sign1", "ternary05"}:
+            from .cuda_backend import cuda_available, decode_kv_cuda
+            if self.backend == "cuda" or cuda_available():
+                return decode_kv_cuda(self._cache)
+        return decode_kv(self._cache)
 
     def snapshot(self) -> KVSnapshot:
         packed_bytes = self._cache.payload_bytes if self._cache else 0

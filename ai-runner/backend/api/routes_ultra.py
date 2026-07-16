@@ -153,6 +153,7 @@ class AttentionStepRequest(BaseModel):
     capacity_tokens: int = Field(default=2048, ge=1, le=1_000_000)
     mode: str = Field(default="sign1", pattern=r"^(sign1|ternary05|sparse05)$")
     sparse_threshold: float = Field(default=0.125, ge=0.0, le=10.0)
+    backend: str = Field(default="auto", pattern=r"^(auto|python|cuda)$")
     query: List[float] = Field(min_length=1, max_length=16_384)
     key: List[float] = Field(min_length=1, max_length=16_384)
     value: List[float] = Field(min_length=1, max_length=16_384)
@@ -223,7 +224,7 @@ async def capabilities():
         "execution_backends": {
             "python": {"available": True, "active": True, "weight_codecs": ["ternary-q05", "sparse05"]},
             "numpy": {"available": True, "active": False, "weight_codecs": ["ternary-q05", "sparse05"]},
-            "cuda": {"available": cuda, "active": False, "weight_codecs": ["ternary-q05"]},
+            "cuda": {"available": cuda, "active": False, "weight_codecs": ["ternary-q05"], "kv_cache_modes": ["sign1", "ternary05"]},
         },
         "tokenizer_backend": "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback",
         "readiness": {
@@ -405,7 +406,7 @@ async def attention_step(request: AttentionStepRequest):
     if not (len(request.query) == len(request.key) == len(request.value) == request.width):
         raise HTTPException(status_code=422, detail="query, key ve value width ile aynı uzunlukta olmalıdır.")
     try:
-        attention = LowBitAttention(request.width, request.capacity_tokens, request.mode, request.sparse_threshold)
+        attention = LowBitAttention(request.width, request.capacity_tokens, request.mode, request.sparse_threshold, request.backend)
         output = attention.step(request.query, request.key, request.value)
         return {"output": output, "keys": attention.keys.snapshot().__dict__, "values": attention.values.snapshot().__dict__}
     except ValueError as exc:

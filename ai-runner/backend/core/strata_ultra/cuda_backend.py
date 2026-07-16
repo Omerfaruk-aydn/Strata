@@ -54,6 +54,13 @@ def _load() -> Optional[ctypes.CDLL]:
                 ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32,
             ]
             function.restype = ctypes.c_int
+            kv_decode = library.strata_cuda_kv_decode
+            kv_decode.argtypes = [
+                ctypes.POINTER(ctypes.c_uint8), ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float), ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_uint32,
+            ]
+            kv_decode.restype = ctypes.c_int
             _LIBRARY = library
             return library
         except (OSError, AttributeError):
@@ -97,4 +104,31 @@ def matvec_cuda(record, vector: list[float]) -> list[float]:
     )
     if status != 0:
         raise RuntimeError(f"Strata CUDA matvec failed with CUDA error code {status}")
+    return list(output)
+
+
+def decode_kv_cuda(cache) -> list[float]:
+    """Decode sign1 or ternary05 KV storage through the native CUDA ABI."""
+    if cache.mode not in {"sign1", "ternary05"}:
+        raise ValueError("CUDA KV decode supports only sign1 and ternary05")
+    if not isinstance(cache.count, int) or not 1 <= cache.count <= 0xFFFFFFFF:
+        raise ValueError("KV count must be in the uint32 range")
+    if not isinstance(cache.group_size, int) or not 1 <= cache.group_size <= 0xFFFFFFFF:
+        raise ValueError("KV group_size must be in the uint32 range")
+    bits = 1 if cache.mode == "sign1" else 2
+    payload_bytes = (cache.count + (7 if bits == 1 else 3)) // (8 if bits == 1 else 4)
+    scale_count = (cache.count + cache.group_size - 1) // cache.group_size
+    if len(cache.payload) != payload_bytes:
+        raise ValueError(f"invalid CUDA KV payload length: {len(cache.payload)} != {payload_bytes}")
+    if len(cache.scales) != scale_count:
+        raise ValueError(f"invalid CUDA KV scale count: {len(cache.scales)} != {scale_count}")
+    library = _load()
+    if library is None:
+        raise RuntimeError("Strata CUDA backend is not installed; build native/ with STRATA_ENABLE_CUDA=ON")
+    packed = (ctypes.c_uint8 * len(cache.payload)).from_buffer_copy(cache.payload)
+    scales = (ctypes.c_float * scale_count)(*cache.scales)
+    output = (ctypes.c_float * cache.count)()
+    status = library.strata_cuda_kv_decode(packed, scales, output, cache.count, cache.group_size, bits)
+    if status != 0:
+        raise RuntimeError(f"Strata CUDA KV decode failed with CUDA error code {status}")
     return list(output)
