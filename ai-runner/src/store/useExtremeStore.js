@@ -9,6 +9,9 @@ const useExtremeStore = create((set, get) => ({
   profiles: [],
   benchmark: null,
   quantization: { available: false, supported_quants: [], jobs: [] },
+  ultraCapabilities: null,
+  ultraMemoryReport: null,
+  ultraBenchmark: null,
   isLoading: false,
   isBenchmarking: false,
   isQuantizing: false,
@@ -20,6 +23,50 @@ const useExtremeStore = create((set, get) => ({
       const data = await res.json();
       set({ capabilities: data });
       return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
+  fetchUltraCapabilities: async () => {
+    try {
+      const res = await apiFetch('/api/ultra/capabilities');
+      const data = await res.json();
+      set({ ultraCapabilities: data });
+      return data;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
+  estimateUltraMemory: async (valueCount = 4096, groupSize = 128) => {
+    try {
+      const res = await apiFetch('/api/ultra/memory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value_count: valueCount, group_size: groupSize }),
+      });
+      const data = await res.json();
+      set({ ultraMemoryReport: data.report });
+      return data.report;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
+  runUltraBenchmark: async (valueCount = 16384, groupSize = 128) => {
+    try {
+      const res = await apiFetch('/api/ultra/benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value_count: valueCount, group_size: groupSize }),
+      });
+      const data = await res.json();
+      set({ ultraBenchmark: data.benchmark });
+      return data.benchmark;
     } catch (error) {
       set({ error: error.message });
       return null;
@@ -178,4 +225,3 @@ const useExtremeStore = create((set, get) => ({
 }));
 
 export default useExtremeStore;
-

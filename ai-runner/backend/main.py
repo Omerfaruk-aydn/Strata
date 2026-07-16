@@ -55,6 +55,7 @@ from .api.routes_settings import router as settings_router
 from .api.ws_telemetry import router as telemetry_router
 from .api.routes_optimizer import router as optimizer_router
 from .api.routes_extreme import router as extreme_router
+from .api.routes_ultra import router as ultra_router
 from .db import session_store
 from .api.auth import TRUSTED_BROWSER_ORIGINS, require_api_access
 
@@ -104,6 +105,7 @@ app.include_router(settings_router)
 app.include_router(telemetry_router)
 app.include_router(optimizer_router)
 app.include_router(extreme_router)
+app.include_router(ultra_router)
 
 
 @app.get("/")
