@@ -110,3 +110,25 @@ async def test_strata_generate_stream_times_out_while_worker_is_silent(monkeypat
 
     assert '"finish_reason": "timeout"' in events[0]
     assert routes_ultra._strata_generation_cancel is None
+
+
+@pytest.mark.asyncio
+async def test_strata_generate_stream_reports_worker_errors_as_terminal_events(monkeypatch):
+    class FailingGenerator:
+        def generate_stream(self, prompt, config):
+            raise RuntimeError("synthetic worker failure")
+            yield  # pragma: no cover
+
+    @contextmanager
+    def fake_context(request, cancel_event):
+        yield FailingGenerator(), "byte-fallback", 1, "python"
+
+    monkeypatch.setattr(routes_ultra, "_strata_generator_context", fake_context)
+    response = await routes_ultra.strata_generate_stream(_request())
+    events = []
+    async for chunk in response.body_iterator:
+        events.append(chunk)
+
+    assert '"finish_reason": "error"' in events[0]
+    assert "synthetic worker failure" in events[0]
+    assert routes_ultra._strata_generation_cancel is None

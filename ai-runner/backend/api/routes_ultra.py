@@ -635,7 +635,7 @@ async def strata_generate_stream(request: GenerateRequest):
                 ):
                     events.put({**event, "tokenizer": tokenizer, "blocks": blocks, "backend": backend})
         except Exception as exc:
-            events.put({"error": str(exc)[:500]})
+            events.put({"error": str(exc)[:500], "finish_reason": "error", "generated_tokens": 0})
         finally:
             events.put(None)
 
