@@ -29,6 +29,7 @@ def test_f32_gguf_converts_to_strata(tmp_path: Path):
     assert -1.0 <= result["quality"]["cosine_similarity"] <= 1.0
     with StrataContainerReader(target) as reader:
         assert reader.tensor_names() == ["test.weight"]
+        assert "conversion_quality" in reader.manifest["metadata"]
 
 
 def test_f16_gguf_converts_to_strata(tmp_path: Path):

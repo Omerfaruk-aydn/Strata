@@ -335,6 +335,10 @@ def convert_gguf_to_strata(
             cols = int(count // rows)
             writer.add_tensor(TensorRecord(name, rows, cols, group_size, target_codec, packed, scales_raw))
             converted += 1
+        writer.metadata["conversion_quality"] = {
+            key: round(value / converted, 8) for key, value in quality_totals.items()
+        } if converted else None
+        writer.metadata["sparse_threshold"] = sparse_threshold if target_codec == "sparse05" else None
         writer.write(target)
     return {
         "source": str(source),
