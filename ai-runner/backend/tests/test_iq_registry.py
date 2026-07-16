@@ -30,3 +30,5 @@ def test_native_cpp_dispatch_matches_registry_contract():
     source = bridge.read_text(encoding="utf-8")
     native_cases = {int(value) for value in re.findall(r"case\s+(\d+)\s*:", source)}
     assert native_cases == set(NATIVE_BRIDGE_TYPE_IDS)
+    for branch in re.split(r"\bcase\s+\d+\s*:", source)[1:]:
+        assert "dequantize_row_iq" in branch.split("default:", 1)[0]
