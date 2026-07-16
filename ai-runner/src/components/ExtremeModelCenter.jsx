@@ -43,10 +43,6 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
   const [targetQuant, setTargetQuant] = useState('Q3_K_M');
   const [allowRequantize, setAllowRequantize] = useState(false);
   const [loadSuccess, setLoadSuccess] = useState(false);
-  const [ultraCodec, setUltraCodec] = useState('ternary-q05');
-  const [ultraGroupSize, setUltraGroupSize] = useState(128);
-  const [ultraValueCount, setUltraValueCount] = useState(16384);
-  const [ultraConversion, setUltraConversion] = useState(null);
 
   const modelOptions = useMemo(() => localModels.map((model, index) => ({
     key: `${index}:${model.id}:${model.downloaded_quant || ''}:${model.local_path || ''}`,
@@ -413,14 +409,6 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
       </section>
     </div>
   );
-}
-
-function UltraPanel({ extreme, modelOptions, selectedModel, selectedKey, setSelectedKey, groupSize, setGroupSize, valueCount, setValueCount, codec, setCodec, conversion, setConversion }) {
-  return <div className="extreme-ultra-layout">
-    <section className="extreme-ultra-hero"><div><span className="extreme-card-kicker">EXPERIMENTAL LOW-BIT RUNTIME</span><h3>Strata Ultra</h3><p>Bağımsız `.strata` formatını, katman paging sistemini ve düşük-bit KV cache’i uygulama içinden ölç ve dene.</p></div><div className="ultra-status-pill"><i />{extreme.ultraCapabilities?.experimental ? 'DENEYSEL / AKTİF' : 'KAPALI'}</div></section>
-    <div className="extreme-ultra-grid"><section className="extreme-tool-card"><span className="extreme-card-kicker">MEMORY LAB</span><h3>Bellek ve codec ölçümü</h3><div className="extreme-inline-fields"><label className="extreme-field"><span>Ağırlık sayısı</span><input type="number" min="128" value={valueCount} onChange={(event) => setValueCount(Number(event.target.value))} /></label><label className="extreme-field"><span>Grup boyutu</span><select value={groupSize} onChange={(event) => setGroupSize(Number(event.target.value))}><option value="32">32</option><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label></div><div className="ultra-actions"><button className="btn btn-primary" onClick={() => extreme.estimateUltraMemory(valueCount, groupSize)}>Belleği hesapla</button><button className="btn btn-secondary" onClick={() => extreme.runUltraBenchmark(valueCount, groupSize)}>Codec benchmark</button></div>{extreme.ultraMemoryReport && <div className="benchmark-results"><Metric label="FP16" value={formatMb(extreme.ultraMemoryReport.f16_bytes / 1048576)} /><Metric label="1-bit KV" value={formatMb(extreme.ultraMemoryReport.sign1_bytes / 1048576)} /><Metric label="Q0.5 KV" value={formatMb(extreme.ultraMemoryReport.ternary05_bytes / 1048576)} /><Metric label="Tasarruf" value={`${extreme.ultraMemoryReport.ternary05_saving_percent}%`} /></div>}</section><section className="extreme-tool-card"><span className="extreme-card-kicker">FORMAT CONVERTER</span><h3>GGUF → Strata</h3><p>Desteklenen yerel GGUF modelini deneysel düşük-bit konteynere dönüştür.</p><label className="extreme-field"><span>Kaynak model</span><select value={selectedKey} onChange={(event) => setSelectedKey(event.target.value)}>{extreme.ultraModels.length === 0 && <option value="">Model bulunamadı</option>}{extreme.ultraModels.map((model) => <option key={model.id} value={model.id}>{model.display_name || model.id}</option>)}</select></label><label className="extreme-field"><span>Hedef codec</span><select value={codec} onChange={(event) => setCodec(event.target.value)}><option value="ternary-q05">STRATA-Q0.5 · ternary</option><option value="sparse05">STRATA-Q0.5 · sparse05</option></select></label><button className="btn btn-primary" disabled={!selectedModel} onClick={async () => setConversion(await extreme.convertToStrata(selectedModel.id, null, groupSize, codec))}>Dönüştürmeyi başlat</button>{conversion && <p className="ultra-result">Hazır: {conversion.target_file || conversion.target_name}</p>}</section></div>
-    <section className="extreme-ultra-capabilities"><span className="extreme-card-kicker">RUNTIME CAPABILITIES</span><div className="ultra-capability-list">{(extreme.ultraCapabilities?.features || []).map((feature) => <span key={feature}>✓ {feature}</span>)}</div><small>Deneysel CPU runtime; tokenizer, mimari eşleme ve GPU kernel kapsamı modele göre değişir.</small></section>
-  </div>;
 }
 
 function Metric({ label, value }) {
