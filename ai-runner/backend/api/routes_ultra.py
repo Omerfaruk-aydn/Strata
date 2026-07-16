@@ -6,6 +6,7 @@ format. Conversion and native execution are deliberately separate milestones.
 """
 
 import asyncio
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -62,6 +63,10 @@ class MatvecRequest(BaseModel):
     resident_window: int = Field(default=2, ge=1, le=1024)
 
 
+class RuntimeBenchmarkRequest(MatvecRequest):
+    iterations: int = Field(default=10, ge=1, le=10_000)
+
+
 @router.get("/capabilities")
 async def capabilities():
     return {
@@ -114,6 +119,36 @@ async def runtime_matvec(request: MatvecRequest):
                     "resident_bytes": runtime.pager.resident_bytes,
                 }}
         return await asyncio.to_thread(execute)
+    except (ValueError, MemoryError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/runtime-benchmark")
+async def runtime_benchmark(request: RuntimeBenchmarkRequest):
+    root = Path(model_manager.model_dir).resolve()
+    model_path = (root / request.model_file).resolve()
+    if model_path.parent != root or not model_path.is_file():
+        raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
+    try:
+        def execute():
+            with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window) as runtime:
+                started = time.perf_counter()
+                result = None
+                for _ in range(request.iterations):
+                    result = runtime.tensor_matvec(request.tensor_name, request.vector)
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                return {
+                    "iterations": request.iterations,
+                    "output_length": len(result or []),
+                    "total_time_ms": round(elapsed_ms, 3),
+                    "average_time_ms": round(elapsed_ms / request.iterations, 3),
+                    "pager": {
+                        "resident_pages": runtime.pager.resident_pages,
+                        "resident_bytes": runtime.pager.resident_bytes,
+                        "events": len(runtime.pager.events),
+                    },
+                }
+        return {"benchmark": await asyncio.to_thread(execute)}
     except (ValueError, MemoryError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

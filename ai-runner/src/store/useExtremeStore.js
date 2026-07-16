@@ -124,6 +124,29 @@ const useExtremeStore = create((set, get) => ({
     }
   },
 
+  benchmarkStrataRuntime: async (modelFile, tensorName, vector, options = {}) => {
+    try {
+      const res = await apiFetch('/api/ultra/runtime-benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_file: modelFile,
+          tensor_name: tensorName,
+          vector,
+          iterations: options.iterations || 10,
+          memory_budget_bytes: options.memoryBudgetBytes || 512 * 1024 * 1024,
+          resident_window: options.residentWindow || 2,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Strata runtime benchmark failed');
+      return data.benchmark;
+    } catch (error) {
+      set({ error: error.message });
+      return null;
+    }
+  },
+
   fetchPresets: async () => {
     try {
       const res = await apiFetch('/api/extreme/presets');
