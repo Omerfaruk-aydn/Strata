@@ -196,12 +196,17 @@ Current capabilities:
 - LRU layer paging with a hard byte budget.
 - Runtime-managed `sign1`, `ternary05`, and experimental `sparse05` KV caches with sliding-window eviction. `sparse05` is sparsity-dependent and reports an estimate; it is not a universal literal half-bit representation for dense activations.
 - API endpoints for capabilities, memory estimates, benchmarks, paging plans, and local conversion.
+- Preflight inspection reports codec distribution, packed/scales memory, tokenizer metadata, missing block roles, and experimental generation readiness.
 
 The current reference executor is a correctness and format-validation milestone. It is not yet a complete tokenizer-backed conversational implementation, and a `.strata` file cannot be loaded by the existing llama.cpp inference path. IQ1, IQ2, and other unsupported block formats require dedicated decoders before conversion is enabled for them. The experimental ultra-low-bit modes intentionally trade output quality for minimum memory use and must be benchmarked against the original model.
 
 Useful API calls:
 
 ~~~text
+GET /api/ultra/capabilities
+GET /api/ultra/models
+GET /api/ultra/layout/{model_file}
+GET /api/ultra/inspect/{model_file}
 POST /api/ultra/memory
 POST /api/ultra/benchmark
 POST /api/ultra/paging-plan
@@ -212,6 +217,8 @@ POST /api/ultra/graph/run
 POST /api/ultra/generate
 POST /api/ultra/quality
 ~~~
+
+`POST /api/ultra/convert/{model_id}` returns the generated container path, codec, sparse threshold when applicable, and aggregate reconstruction-quality metrics. The inspect endpoint reads the container in a bounded streaming pass, so preflight does not materialize the whole model in RAM.
 
 The runtime source is under [`ai-runner/backend/core/strata_ultra/`](ai-runner/backend/core/strata_ultra/). Every new codec and runtime component is covered by focused tests before it is considered ready for integration.
 
