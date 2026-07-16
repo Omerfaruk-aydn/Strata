@@ -12,6 +12,7 @@ if(STRATA_ENABLE_CUDA)
   set_target_properties(strata_cuda PROPERTIES
     CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON
+    CUDA_RUNTIME_LIBRARY Shared
     POSITION_INDEPENDENT_CODE ON
     OUTPUT_NAME "strata_cuda"
   )

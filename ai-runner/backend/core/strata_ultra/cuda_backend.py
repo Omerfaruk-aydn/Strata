@@ -9,6 +9,23 @@ from pathlib import Path
 from typing import Optional
 
 _LIBRARY: Optional[ctypes.CDLL] = None
+_DLL_DIRECTORIES: list[object] = []
+
+
+def _prepare_windows_dll_search() -> None:
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return
+    configured = os.environ.get("STRATA_CUDA_LIBRARY", "").strip()
+    directories = [Path(configured).expanduser().resolve().parent] if configured else []
+    cuda_path = os.environ.get("CUDA_PATH", "").strip()
+    if cuda_path:
+        directories.append(Path(cuda_path).expanduser().resolve() / "bin")
+    for directory in directories:
+        if directory.is_dir():
+            try:
+                _DLL_DIRECTORIES.append(os.add_dll_directory(str(directory)))
+            except OSError:
+                continue
 
 
 def _candidates() -> list[Path]:
@@ -24,6 +41,7 @@ def _load() -> Optional[ctypes.CDLL]:
     global _LIBRARY
     if _LIBRARY is not None:
         return _LIBRARY
+    _prepare_windows_dll_search()
     for candidate in _candidates():
         if not candidate.is_file():
             continue
