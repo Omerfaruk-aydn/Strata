@@ -3,6 +3,7 @@ import useExtremeStore from '../store/useExtremeStore';
 import useModelStore from '../store/useModelStore';
 import useSettingsStore from '../store/useSettingsStore';
 import './ExtremeModelCenter.css';
+import StrataUltraPanel from './StrataUltraPanel';
 
 const STATUS_STYLES = {
   ideal: { icon: '◆', label: 'GPU’ya tam sığıyor', tone: 'success' },
@@ -385,7 +386,7 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
             </div>
           )}
 
-          {tab === 'ultra' && <UltraPanel extreme={extreme} modelOptions={modelOptions} selectedModel={selectedModel} selectedKey={selectedKey} setSelectedKey={setSelectedKey} groupSize={ultraGroupSize} setGroupSize={setUltraGroupSize} valueCount={ultraValueCount} setValueCount={setUltraValueCount} codec={ultraCodec} setCodec={setUltraCodec} conversion={ultraConversion} setConversion={setUltraConversion} />}
+          {tab === 'ultra' && <StrataUltraPanel extreme={extreme} />}
 
           {tab === 'profiles' && (
             <div className="profile-table-wrap">
