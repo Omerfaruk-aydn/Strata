@@ -7,10 +7,16 @@ CUDA, and Vulkan execution backends.
 
 from .format import STRATA_FORMAT_VERSION, TensorHeader
 from .ternary import decode_ternary, encode_ternary
+from .kv_cache import PackedKV, decode_kv, encode_kv, estimate_kv_bytes, kv_memory_report
 
 __all__ = [
     "STRATA_FORMAT_VERSION",
     "TensorHeader",
     "encode_ternary",
     "decode_ternary",
+    "PackedKV",
+    "encode_kv",
+    "decode_kv",
+    "estimate_kv_bytes",
+    "kv_memory_report",
 ]
