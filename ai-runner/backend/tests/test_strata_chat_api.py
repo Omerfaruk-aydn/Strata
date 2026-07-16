@@ -40,6 +40,26 @@ async def test_strata_chat_stream_maps_token_events_to_openai_deltas(monkeypatch
 
 
 @pytest.mark.asyncio
+async def test_strata_chat_stream_preserves_worker_error_details(monkeypatch):
+    class FakeResponse:
+        @property
+        async def body_iterator(self):
+            yield 'data: {"error":"worker failed","finish_reason":"error","generated_tokens":0}\n\n'
+
+    async def fake_stream(request):
+        return FakeResponse()
+
+    monkeypatch.setattr(routes_ultra, "strata_generate_stream", fake_stream)
+    response = await routes_ultra.strata_chat_completions(_request(stream=True))
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+
+    assert '"error": "worker failed"' in chunks[1]
+    assert '"finish_reason": "error"' in chunks[1]
+
+
+@pytest.mark.asyncio
 async def test_strata_chat_stream_maps_invalid_messages_to_422():
     request = _request(messages=[{"role": "user", "content": "  "}], stream=True)
     with pytest.raises(routes_ultra.HTTPException) as failure:

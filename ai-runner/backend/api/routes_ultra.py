@@ -561,7 +561,9 @@ async def strata_chat_completions(request: StrataChatRequest):
                     if not raw.startswith("data: "):
                         continue
                     event = json.loads(raw[6:].strip())
-                    if "text" in event:
+                    if "error" in event:
+                        payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": event.get("finish_reason", "error")}], "error": event["error"]}
+                    elif "text" in event:
                         payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {"content": event["text"]}, "finish_reason": None}]}
                     elif "finish_reason" in event:
                         payload = {"id": response_id, "object": "chat.completion.chunk", "choices": [{"index": 0, "delta": {}, "finish_reason": event["finish_reason"]}]}
