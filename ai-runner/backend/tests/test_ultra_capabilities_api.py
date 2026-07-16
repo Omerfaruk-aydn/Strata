@@ -14,3 +14,5 @@ async def test_capabilities_report_active_tokenizer_backend():
     assert result["execution_backends"]["python"]["available"] is True
     assert result["execution_backends"]["cuda"]["weight_codecs"] == ["ternary-q05"]
     assert isinstance(result["native_iq_decoder"], bool)
+    assert result["readiness"]["container_io"] is True
+    assert result["readiness"]["production_chat_runtime"] is False

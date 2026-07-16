@@ -150,6 +150,7 @@ async def capabilities():
     if native_iq:
         source_codecs.extend(["IQ1_S", "IQ1_M", "IQ2_XXS", "IQ2_XS", "IQ2_S", "IQ3_XXS", "IQ3_S"])
     unsupported_iq = [item["name"] for item in iq_capability_report() if item["name"] not in source_codecs]
+    cuda = cuda_available()
     return {
         "runtime": "strata-ultra",
         "format_version": 1,
@@ -163,9 +164,17 @@ async def capabilities():
         "execution_backends": {
             "python": {"available": True, "active": True, "weight_codecs": ["ternary-q05", "sparse05"]},
             "numpy": {"available": True, "active": False, "weight_codecs": ["ternary-q05", "sparse05"]},
-            "cuda": {"available": cuda_available(), "active": False, "weight_codecs": ["ternary-q05"]},
+            "cuda": {"available": cuda, "active": False, "weight_codecs": ["ternary-q05"]},
         },
         "tokenizer_backend": "gguf-bpe" if importlib.util.find_spec("tokenizers") else "byte-fallback",
+        "readiness": {
+            "container_io": True,
+            "python_executor": True,
+            "native_cuda_executor": cuda,
+            "native_iq_conversion": native_iq,
+            "experimental_generation": True,
+            "production_chat_runtime": False,
+        },
         "status": "experimental",
     }
 
