@@ -7,6 +7,7 @@ format. Conversion and native execution are deliberately separate milestones.
 
 import asyncio
 import importlib.util
+import threading
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -139,6 +140,7 @@ class GenerateRequest(BaseModel):
     prompt: str = Field(default="", max_length=100_000)
     max_new_tokens: int = Field(default=16, ge=1, le=1024)
     stop_token_ids: List[int] = Field(default_factory=list, max_length=64)
+    timeout_s: float = Field(default=300.0, ge=0.0, le=86_400.0)
     memory_budget_bytes: int = Field(default=512 * 1024 * 1024, ge=1)
     resident_window: int = Field(default=2, ge=1, le=1024)
     backend: str = Field(default="auto", pattern=r"^(auto|python|numpy|cuda)$")
@@ -397,6 +399,8 @@ async def generate_text(request: GenerateRequest):
     if model_path.parent != root or not model_path.is_file():
         raise HTTPException(status_code=404, detail="Strata model dosyası bulunamadı.")
     try:
+        cancel_event = threading.Event()
+
         def execute():
             with StrataRuntime(model_path, request.memory_budget_bytes, request.resident_window, request.backend) as runtime:
                 with StrataContainerReader(model_path) as reader:
@@ -433,10 +437,23 @@ async def generate_text(request: GenerateRequest):
                 )
                 text = generator.generate(
                     request.prompt,
-                    GenerationConfig(request.max_new_tokens, stop_token_ids=tuple(request.stop_token_ids)),
+                    GenerationConfig(
+                        request.max_new_tokens,
+                        stop_token_ids=tuple(request.stop_token_ids),
+                        cancel_event=cancel_event,
+                    ),
                 )
                 return {"text": text, "tokenizer": tokenizer_name, "blocks": len(blocks), "backend": runtime.backend}
-        return await asyncio.to_thread(execute)
+        task = asyncio.create_task(asyncio.to_thread(execute))
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), timeout=request.timeout_s or None)
+        except asyncio.TimeoutError as exc:
+            cancel_event.set()
+            try:
+                await asyncio.wait_for(task, timeout=5.0)
+            except Exception:
+                pass
+            raise HTTPException(status_code=504, detail="Strata generation timed out") from exc
     except (ValueError, MemoryError, KeyError, IndexError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from threading import Event
 
 from .executor import StrataRuntime
 from .tokenizer import ByteTokenizer
@@ -14,6 +15,7 @@ class GenerationConfig:
     max_new_tokens: int = 32
     eos_token: int | None = None
     stop_token_ids: tuple[int, ...] = field(default_factory=tuple)
+    cancel_event: Event | None = None
 
     def __post_init__(self) -> None:
         if self.max_new_tokens < 1 or self.max_new_tokens > 4096:
@@ -43,10 +45,14 @@ class StrataGenerator:
         if not tokens:
             tokens = [0]
         for token in tokens[:-1]:
+            if config.cancel_event is not None and config.cancel_event.is_set():
+                return prompt + self.tokenizer.decode(generated)
             self.transformer.step(self._embedding_row(token))
         generated: list[int] = []
         current = tokens[-1]
         for _ in range(config.max_new_tokens):
+            if config.cancel_event is not None and config.cancel_event.is_set():
+                break
             hidden = self.transformer.step(self._embedding_row(current))
             logits = self.runtime.tensor_matvec(self.output, hidden)
             current = max(range(len(logits)), key=logits.__getitem__)
