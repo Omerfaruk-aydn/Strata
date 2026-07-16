@@ -42,6 +42,20 @@ def matvec(record: TensorRecord, vector: list[float]) -> list[float]:
     ]
 
 
+def matmul(record: TensorRecord, matrix: list[list[float]]) -> list[list[float]]:
+    """Compute multiple vectors while decoding the packed tensor once."""
+    if any(len(vector) != record.cols for vector in matrix):
+        raise ValueError(f"every vector must have {record.cols} columns")
+    values = _tensor_values(record)
+    output = []
+    for vector in matrix:
+        output.append([
+            sum(values[row * record.cols + col] * vector[col] for col in range(record.cols))
+            for row in range(record.rows)
+        ])
+    return output
+
+
 class StrataRuntime:
     """Minimal model runtime with a bounded resident tensor window."""
 

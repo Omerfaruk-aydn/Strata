@@ -1,7 +1,7 @@
 import struct
 from pathlib import Path
 
-from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matvec
+from backend.core.strata_ultra import StrataContainerWriter, StrataRuntime, TensorRecord, matmul, matvec
 
 
 def _record():
@@ -23,3 +23,8 @@ def test_strata_runtime_uses_pager(tmp_path: Path):
     with StrataRuntime(target, memory_budget_bytes=1024, resident_window=1) as runtime:
         assert runtime.tensor_matvec("dense.weight", [1.0, 2.0, 3.0, 4.0]) == [-2.0, 6.0]
         assert runtime.pager.resident_pages == 1
+
+
+def test_matmul_decodes_tensor_for_a_batch():
+    result = matmul(_record(), [[1.0, 2.0, 3.0, 4.0], [0.0, 1.0, 0.0, 1.0]])
+    assert result == [[-2.0, 6.0], [-1.0, 2.0]]
