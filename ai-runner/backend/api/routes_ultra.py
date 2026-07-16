@@ -32,6 +32,7 @@ from ..core.strata_ultra import (
     run_codec_benchmark,
 )
 from ..core.strata_ultra.cuda_backend import cuda_available
+from ..core.strata_ultra.iq_registry import capability_report as iq_capability_report
 from ..models.model_manager import model_manager
 from .auth import require_api_access
 
@@ -149,6 +150,7 @@ async def capabilities():
         "weight_codecs": ["ternary-q05", "sparse05"],
         "source_gguf_codecs": ["F32", "F16", "Q4_0", "Q8_0", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "IQ4_NL"],
         "unsupported_source_codecs": ["IQ1", "IQ2", "IQ3", "IQ4_XS"],
+        "iq_codecs": iq_capability_report(),
         "kv_cache_modes": ["sign1", "ternary05", "sparse05"],
         "features": ["bit-packing", "group-scales", "layer-paging", "benchmark"],
         "execution_backends": {

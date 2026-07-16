@@ -18,6 +18,7 @@ from .container import StrataContainerWriter, TensorRecord
 from .ternary import decode_ternary, encode_ternary
 from .sparse_codec import decode_sparse05, encode_sparse05
 from .quality import tensor_quality
+from .iq_registry import get_iq_codec
 
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
@@ -308,6 +309,11 @@ def convert_gguf_to_strata(
         converted = 0
         quality_totals = {"mse": 0.0, "rmse": 0.0, "max_abs_error": 0.0, "cosine_similarity": 0.0}
         for name, dims, tensor_type, offset in infos:
+            iq_codec = get_iq_codec(tensor_type)
+            if iq_codec is not None and not iq_codec.decodable:
+                raise ValueError(
+                    f"Tensor {name} uses {iq_codec.name}; its verified decoder is not available yet"
+                )
             if tensor_type not in {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_NL}:
                 supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL only in this converter"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
