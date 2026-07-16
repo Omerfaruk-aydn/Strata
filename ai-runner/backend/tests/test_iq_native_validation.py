@@ -1,6 +1,16 @@
 import pytest
 
-from backend.core.strata_ultra.iq_native import decode_iq_native
+from backend.core.strata_ultra.iq_native import decode_iq_native, native_iq_available
+from backend.core.strata_ultra.iq_registry import NATIVE_BRIDGE_TYPE_IDS, get_iq_codec
+
+
+@pytest.mark.skipif(not native_iq_available(), reason="native GGML IQ bridge is not installed")
+@pytest.mark.parametrize("type_id", sorted(NATIVE_BRIDGE_TYPE_IDS))
+def test_native_bridge_decodes_zero_block_for_every_supported_iq_type(type_id):
+    codec = get_iq_codec(type_id)
+    values = decode_iq_native(type_id, bytes(codec.block_bytes), codec.block_values)
+    assert len(values) == codec.block_values
+    assert all(value == value for value in values)
 
 
 def test_native_iq_rejects_unknown_type_before_loading_library():
