@@ -26,6 +26,6 @@ def test_generation_cancelled_during_prefill_returns_prompt_without_error():
     event.set()
     generator = StrataGenerator(_Runtime(), _Transformer(), "embedding", "output", tokenizer=_Tokenizer())
 
-    result = generator.generate("hello", GenerationConfig(cancel_event=event))
+    result = generator.generate_with_metadata("hello", GenerationConfig(cancel_event=event))
 
-    assert result == "hello"
+    assert result == {"text": "hello", "generated_tokens": 0, "finish_reason": "cancelled"}

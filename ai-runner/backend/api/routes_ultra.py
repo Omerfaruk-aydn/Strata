@@ -445,7 +445,7 @@ async def generate_text(request: GenerateRequest):
                 generator = StrataGenerator(
                     runtime, LowBitTransformer(blocks), request.embedding_tensor, request.output_tensor, tokenizer=tokenizer,
                 )
-                text = generator.generate(
+                completion = generator.generate_with_metadata(
                     request.prompt,
                     GenerationConfig(
                         request.max_new_tokens,
@@ -453,7 +453,7 @@ async def generate_text(request: GenerateRequest):
                         cancel_event=cancel_event,
                     ),
                 )
-                return {"text": text, "tokenizer": tokenizer_name, "blocks": len(blocks), "backend": runtime.backend}
+                return {**completion, "tokenizer": tokenizer_name, "blocks": len(blocks), "backend": runtime.backend}
         task = asyncio.create_task(asyncio.to_thread(execute))
         try:
             return await asyncio.wait_for(asyncio.shield(task), timeout=request.timeout_s or None)

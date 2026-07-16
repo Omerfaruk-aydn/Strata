@@ -40,6 +40,10 @@ class StrataGenerator:
         return self.runtime.tensor_row(self.embedding, token)
 
     def generate(self, prompt: str, config: GenerationConfig | None = None) -> str:
+        return self.generate_with_metadata(prompt, config)["text"]
+
+    def generate_with_metadata(self, prompt: str, config: GenerationConfig | None = None) -> dict[str, object]:
+        """Generate text and return stable completion metadata for API callers."""
         config = config or GenerationConfig()
         tokens = self.tokenizer.encode(prompt)
         if not tokens:
@@ -47,16 +51,23 @@ class StrataGenerator:
         generated: list[int] = []
         for token in tokens[:-1]:
             if config.cancel_event is not None and config.cancel_event.is_set():
-                return prompt + self.tokenizer.decode(generated)
+                return {"text": prompt + self.tokenizer.decode(generated), "generated_tokens": 0, "finish_reason": "cancelled"}
             self.transformer.step(self._embedding_row(token))
         current = tokens[-1]
+        finish_reason = "length"
         for _ in range(config.max_new_tokens):
             if config.cancel_event is not None and config.cancel_event.is_set():
+                finish_reason = "cancelled"
                 break
             hidden = self.transformer.step(self._embedding_row(current))
             logits = self.runtime.tensor_matvec(self.output, hidden)
             current = max(range(len(logits)), key=logits.__getitem__)
             generated.append(current)
             if current == config.eos_token or current in config.stop_token_ids:
+                finish_reason = "stop"
                 break
-        return prompt + self.tokenizer.decode(generated)
+        return {
+            "text": prompt + self.tokenizer.decode(generated),
+            "generated_tokens": len(generated),
+            "finish_reason": finish_reason,
+        }

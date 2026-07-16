@@ -30,3 +30,34 @@ def test_byte_tokenizer_is_reversible():
     tokenizer = ByteTokenizer()
     text = "Strata"
     assert tokenizer.decode(tokenizer.encode(text)) == text
+
+
+class _GenerationRuntime:
+    def tensor_row(self, name, token):
+        return [float(token)]
+
+    def tensor_matvec(self, name, hidden):
+        return [0.0, 1.0]
+
+
+class _GenerationTransformer:
+    def step(self, hidden):
+        return hidden
+
+
+class _GenerationTokenizer:
+    def encode(self, prompt):
+        return [0]
+
+    def decode(self, tokens):
+        return "|".join(str(token) for token in tokens)
+
+
+def test_generation_reports_length_finish_reason_and_token_count():
+    generator = StrataGenerator(
+        _GenerationRuntime(), _GenerationTransformer(), "embedding", "output", _GenerationTokenizer()
+    )
+
+    result = generator.generate_with_metadata("prompt", GenerationConfig(max_new_tokens=2))
+
+    assert result == {"text": "prompt1|1", "generated_tokens": 2, "finish_reason": "length"}
