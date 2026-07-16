@@ -8,6 +8,15 @@
 
 #include "ggml-quants.h"
 
+static_assert(sizeof(block_iq2_xxs) == 66, "incompatible GGML block_iq2_xxs layout");
+static_assert(sizeof(block_iq2_xs) == 74, "incompatible GGML block_iq2_xs layout");
+static_assert(sizeof(block_iq3_xxs) == 98, "incompatible GGML block_iq3_xxs layout");
+static_assert(sizeof(block_iq1_s) == 50, "incompatible GGML block_iq1_s layout");
+static_assert(sizeof(block_iq3_s) == 110, "incompatible GGML block_iq3_s layout");
+static_assert(sizeof(block_iq2_s) == 82, "incompatible GGML block_iq2_s layout");
+static_assert(sizeof(block_iq4_xs) == 136, "incompatible GGML block_iq4_xs layout");
+static_assert(sizeof(block_iq1_m) == 56, "incompatible GGML block_iq1_m layout");
+
 #if defined(_WIN32)
 #define STRATA_IQ_EXPORT extern "C" __declspec(dllexport)
 #else
