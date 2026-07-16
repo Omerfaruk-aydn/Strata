@@ -43,3 +43,18 @@ class LowBitTransformerBlock:
         residual = [hidden[index] + projected[index] for index in range(len(hidden))]
         mlp_output = self.mlp.forward(residual)
         return [residual[index] + mlp_output[index] for index in range(len(residual))]
+
+
+class LowBitTransformer:
+    """Sequential multi-block runtime with a shared bounded pager."""
+
+    def __init__(self, blocks: list[LowBitTransformerBlock]):
+        if not blocks:
+            raise ValueError("transformer must contain at least one block")
+        self.blocks = blocks
+
+    def step(self, hidden: list[float]) -> list[float]:
+        output = list(hidden)
+        for block in self.blocks:
+            output = block.step(output)
+        return output
