@@ -38,3 +38,18 @@ async def test_generate_route_runs_real_container_and_returns_metadata(tmp_path,
     assert response["generated_tokens"] == 1
     assert response["finish_reason"] == "length"
     assert response["backend"] == "python"
+
+    chat_response = await routes_ultra.strata_chat_completions(routes_ultra.StrataChatRequest(
+        model_file=target.name,
+        block_prefixes=["blk.0"],
+        embedding_tensor="embedding",
+        output_tensor="output",
+        width=1,
+        messages=[{"role": "user", "content": "Hello"}],
+        max_new_tokens=1,
+        backend="python",
+    ))
+
+    assert chat_response["object"] == "chat.completion"
+    assert chat_response["choices"][0]["message"]["role"] == "assistant"
+    assert chat_response["usage"]["completion_tokens"] == 1
