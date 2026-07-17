@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import json
+import math
 import struct
 from pathlib import Path
 from typing import BinaryIO
@@ -20,11 +21,13 @@ from .sparse_codec import decode_sparse05, encode_sparse05
 from .quality import tensor_quality
 from .iq_registry import get_iq_codec
 from .iq_native import decode_iq_native, native_iq_available
+from .cuda_backend import decode_q4k_cuda, decode_q6k_cuda, decode_q50_cuda, decode_q80_cuda
 
 GGUF_MAGIC = b"GGUF"
 GGML_TYPE_F32 = 0
 GGML_TYPE_F16 = 1
 GGML_TYPE_Q4_0 = 2
+GGML_TYPE_Q5_0 = 6
 GGML_TYPE_Q8_0 = 8
 GGML_TYPE_Q2_K = 10
 GGML_TYPE_Q3_K = 11
@@ -81,12 +84,18 @@ def _decode_q2_k(raw: bytes, count: int) -> tuple[float, ...]:
     return tuple(values)
 
 
-def _decode_q3_k(raw: bytes, count: int) -> tuple[float, ...]:
+def _decode_q3_k(raw: bytes, count: int):
     """Decode GGML Q3_K using the upstream high-bit mask and scale packing."""
     block_size = 32 + 64 + 12 + 2
     if count % _QK_K or len(raw) != (count // _QK_K) * block_size:
         raise ValueError("Invalid Q3_K tensor block size")
-    values = []
+    try:
+        import numpy as np
+        values = np.empty(count, dtype=np.float32)
+        write_index = 0
+    except ImportError:
+        values = []
+        write_index = None
     for offset in range(0, len(raw), block_size):
         hmask = raw[offset:offset + 32]
         quant = raw[offset + 32:offset + 96]
@@ -111,12 +120,20 @@ def _decode_q3_k(raw: bytes, count: int) -> tuple[float, ...]:
                 scale_index += 1
                 for local in range(16):
                     high = 0 if (hmask[local] & mask) else 4
-                    values.append(dl * (((quant[q_offset + local] >> shift) & 3) - high))
+                    values[write_index] = dl * (((quant[q_offset + local] >> shift) & 3) - high) if write_index is not None else 0.0
+                    if write_index is None:
+                        values.append(dl * (((quant[q_offset + local] >> shift) & 3) - high))
+                    else:
+                        write_index += 1
                 dl = d_all * (scales[scale_index] - 32)
                 scale_index += 1
                 for local in range(16):
                     high = 0 if (hmask[local + 16] & mask) else 4
-                    values.append(dl * (((quant[q_offset + local + 16] >> shift) & 3) - high))
+                    values[write_index] = dl * (((quant[q_offset + local + 16] >> shift) & 3) - high) if write_index is not None else 0.0
+                    if write_index is None:
+                        values.append(dl * (((quant[q_offset + local + 16] >> shift) & 3) - high))
+                    else:
+                        write_index += 1
                 shift += 2
                 mask <<= 1
             q_offset += 32
@@ -189,10 +206,11 @@ def _decode_q6_k(raw: bytes, count: int) -> tuple[float, ...]:
         raise ValueError("Invalid Q6_K tensor block size")
     values = []
     for offset in range(0, len(raw), block_size):
-        d = struct.unpack_from("<e", raw, offset)[0]
-        low = raw[offset + 2:offset + 130]
-        high = raw[offset + 130:offset + 194]
-        scales = struct.unpack_from("<16b", raw, offset + 194)
+        # GGML block_q6_K layout is ql[128], qh[64], scales[16], d(fp16).
+        low = raw[offset:offset + 128]
+        high = raw[offset + 128:offset + 192]
+        scales = struct.unpack_from("<16b", raw, offset + 192)
+        d = struct.unpack_from("<e", raw, offset + 208)[0]
         low_offset, high_offset, scale_offset = 0, 0, 0
         for start in range(0, _QK_K, 128):
             for index in range(32):
@@ -233,6 +251,52 @@ def _decode_q8_0(raw: bytes, count: int) -> tuple[float, ...]:
     for offset in range(0, len(raw), 34):
         scale = struct.unpack_from("<e", raw, offset)[0]
         values.extend(scale * value for value in struct.unpack_from("<32b", raw, offset + 2))
+    return values
+
+
+def _convert_q3_k_chunked(raw: bytes, count: int, group_size: int) -> tuple[bytes, list[float], dict[str, float]]:
+    """Decode and requantize a large Q3_K tensor without a full-size float buffer."""
+    block_bytes = 110
+    block_values = 256
+    blocks_per_chunk = max(1, 1_048_576 // block_values)
+    packed_parts: list[bytes] = []
+    all_scales: list[float] = []
+    metrics_total = {"mse": 0.0, "rmse": 0.0, "max_abs_error": 0.0, "cosine_similarity": 0.0}
+    chunks = 0
+    for block_start in range(0, count // block_values, blocks_per_chunk):
+        block_end = min(count // block_values, block_start + blocks_per_chunk)
+        chunk_count = (block_end - block_start) * block_values
+        values = _decode_q3_k(raw[block_start * block_bytes:block_end * block_bytes], chunk_count)
+        packed, scales = encode_ternary(values, group_size)
+        reconstructed = decode_ternary(packed, scales, chunk_count, group_size)
+        metrics = tensor_quality(values, reconstructed)
+        for key in metrics_total:
+            metrics_total[key] += float(metrics[key])
+        packed_parts.append(packed)
+        all_scales.extend(scales)
+        chunks += 1
+    return b"".join(packed_parts), all_scales, {key: value / chunks for key, value in metrics_total.items()}
+
+
+def _decode_q5_0(raw: bytes, count: int) -> tuple[float, ...]:
+    """Decode GGML Q5_0 blocks (32 values, fp16 scale + low nibbles + high bits)."""
+    block_size = 22
+    if count % _QK or len(raw) != (count // _QK) * block_size:
+        raise ValueError("Invalid Q5_0 tensor block size")
+    try:
+        import numpy as np
+        values = np.empty(count, dtype=np.float32)
+        write_index = 0
+    except ImportError:
+        values = []
+        write_index = None
+    for offset in range(0, len(raw), block_size):
+        scale = struct.unpack_from("<e", raw, offset)[0]
+        low = raw[offset + 2:offset + 18]
+        high = int.from_bytes(raw[offset + 18:offset + 22], "little")
+        for index in range(32):
+            q = ((low[index // 2] >> (4 * (index % 2))) & 0x0F) | (((high >> index) & 1) << 4)
+            values.append(scale * (q - 16))
     return tuple(values)
 
 
@@ -310,7 +374,7 @@ def convert_gguf_to_strata(
         converted = 0
         native_iq = native_iq_available()
         base_supported_types = {
-            GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0,
+            GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q5_0, GGML_TYPE_Q8_0,
             GGML_TYPE_Q2_K, GGML_TYPE_Q3_K, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K,
             GGML_TYPE_Q6_K, GGML_TYPE_IQ4_NL,
         }
@@ -322,7 +386,7 @@ def convert_gguf_to_strata(
                     f"Tensor {name} uses {iq_codec.name}; its verified decoder is not available yet"
                 )
             if tensor_type not in base_supported_types and not (iq_codec and native_iq):
-                supported = "F32/F16/Q4_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL plus native GGML IQ1/IQ2/IQ3/IQ4_XS when available"
+                supported = "F32/F16/Q4_0/Q5_0/Q8_0/Q2_K/Q3_K/Q4_K/Q5_K/Q6_K/IQ4_NL plus native GGML IQ1/IQ2/IQ3/IQ4_XS when available"
                 raise ValueError(f"Tensor {name} uses GGUF type {tensor_type}; {supported}")
             count = 1
             for dim in dims:
@@ -333,6 +397,8 @@ def convert_gguf_to_strata(
                 byte_count = count * 2
             elif tensor_type == GGML_TYPE_Q4_0:
                 byte_count = (count // _QK) * 18
+            elif tensor_type == GGML_TYPE_Q5_0:
+                byte_count = (count // _QK) * 22
             elif tensor_type == GGML_TYPE_Q8_0:
                 byte_count = (count // _QK) * 34
             elif tensor_type == GGML_TYPE_Q2_K:
@@ -355,34 +421,66 @@ def convert_gguf_to_strata(
                 raise ValueError(f"Tensor {name} exceeds safe input bounds")
             stream.seek(data_start + offset)
             raw = _read_exact(stream, byte_count)
+            if tensor_type == GGML_TYPE_Q3_K and count > 4_000_000:
+                packed, scales, metrics = _convert_q3_k_chunked(raw, count, group_size)
+                for key in quality_totals:
+                    quality_totals[key] += float(metrics.get(key, 0.0))
+                scales_raw = struct.pack(f"<{len(scales)}f", *scales)
+                rows = int(dims[0])
+                cols = int(count // rows)
+                writer.add_tensor(TensorRecord(name, rows, cols, group_size, target_codec, packed, scales_raw))
+                converted += 1
+                continue
             if tensor_type == GGML_TYPE_F32:
                 values = struct.unpack(f"<{count}f", raw)
             elif tensor_type == GGML_TYPE_F16:
                 values = struct.unpack(f"<{count}e", raw)
             elif tensor_type == GGML_TYPE_Q4_0:
                 values = _decode_q4_0(raw, count)
+            elif tensor_type == GGML_TYPE_Q5_0:
+                if os.environ.get("STRATA_CONVERTER_BACKEND", "").strip().lower() == "cuda":
+                    values = decode_q50_cuda(raw, count // _QK)
+                else:
+                    values = _decode_q5_0(raw, count)
             elif tensor_type == GGML_TYPE_Q8_0:
-                values = _decode_q8_0(raw, count)
+                if os.environ.get("STRATA_CONVERTER_BACKEND", "").strip().lower() == "cuda":
+                    values = decode_q80_cuda(raw, count // _QK)
+                else:
+                    values = _decode_q8_0(raw, count)
             elif tensor_type == GGML_TYPE_Q2_K:
                 values = _decode_q2_k(raw, count)
             elif tensor_type == GGML_TYPE_Q3_K:
                 values = _decode_q3_k(raw, count)
             elif tensor_type == GGML_TYPE_Q4_K:
-                values = _decode_q4_k(raw, count)
+                # GPU decode is opt-in until the freshly built DLL is validated;
+                # CPU remains the safe fallback for existing installations.
+                if os.environ.get("STRATA_CONVERTER_BACKEND", "").strip().lower() == "cuda":
+                    values = decode_q4k_cuda(raw, count // _QK_K)
+                else:
+                    values = _decode_q4_k(raw, count)
             elif tensor_type == GGML_TYPE_Q5_K:
                 values = _decode_q5_k(raw, count)
+            elif tensor_type == GGML_TYPE_Q6_K:
+                if os.environ.get("STRATA_CONVERTER_BACKEND", "").strip().lower() == "cuda":
+                    values = decode_q6k_cuda(raw, count // _QK_K)
+                else:
+                    values = _decode_q6_k(raw, count)
             elif tensor_type == GGML_TYPE_IQ4_NL:
                 values = _decode_iq4_nl(raw, count)
             elif iq_codec is not None and native_iq:
                 values = decode_iq_native(tensor_type, raw, count)
             else:
                 values = _decode_q6_k(raw, count)
+            if not all(math.isfinite(float(value)) for value in values):
+                raise ValueError(f"Tensor {name} decoded to non-finite values (GGUF type {tensor_type})")
             if target_codec == "sparse05":
                 packed, scales = encode_sparse05(values, group_size, threshold=sparse_threshold)
                 reconstructed = decode_sparse05(packed, scales, count, group_size)
             else:
                 packed, scales = encode_ternary(values, group_size)
                 reconstructed = decode_ternary(packed, scales, count, group_size)
+            if not all(math.isfinite(float(scale)) for scale in scales):
+                raise ValueError(f"Tensor {name} produced non-finite quantization scales")
             metrics = tensor_quality(values, reconstructed)
             for key in quality_totals:
                 quality_totals[key] += float(metrics[key])
