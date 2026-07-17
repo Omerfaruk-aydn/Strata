@@ -32,7 +32,7 @@ function formatTime(milliseconds = 0) {
 export default function ExtremeModelCenter({ isOpen, onClose }) {
   const extreme = useExtremeStore();
   const settings = useSettingsStore();
-  const { localModels, activeModel, loadModel, fetchLocalModels, loadReport } = useModelStore();
+  const { localModels, activeModel, loadModel, fetchLocalModels, loadReport, getOffloadPlan, offloadPlan } = useModelStore();
   const [tab, setTab] = useState('planner');
   const [sourceMode, setSourceMode] = useState('local');
   const [selectedKey, setSelectedKey] = useState('');
@@ -121,6 +121,7 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
     setLoadSuccess(false);
     if (sourceMode === 'local') {
       if (!selectedModel) return;
+      await getOffloadPlan(selectedModel.id, selectedModel.downloaded_quant || 'Q4_K_M', contextLength);
       await extreme.analyzeLocal(selectedModel.id, {
         quant: selectedModel.downloaded_quant,
         preset,
@@ -316,6 +317,13 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                       <Config label="KV cache" value={report.runtime.kv_cache_type.toUpperCase()} />
                       <Config label="Depolama" value={report.memory.storage_mode.replaceAll('_', ' ')} />
                     </div>
+
+                    {offloadPlan?.quant_recommendation && (
+                      <div className="extreme-inline-warning">
+                        Bu donanım için başlangıç önerisi: <b>{offloadPlan.quant_recommendation.recommended}</b>.
+                        {offloadPlan.quant_recommendation.reason ? ` Sebep: ${offloadPlan.quant_recommendation.reason}.` : ''}
+                      </div>
+                    )}
 
                     {(report.blockers.length > 0 || report.warnings.length > 0 || report.actions.length > 0) && (
                       <div className="extreme-findings">

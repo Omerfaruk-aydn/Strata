@@ -547,12 +547,18 @@ async def test_model_library_search_plan_and_delete_contracts(api_client, monkey
             return {"gpu_layers": 20, "ram_layers": 12, "disk_layers": 0}
 
     monkeypatch.setattr(routes_models, "calculate_offload_plan", lambda **kwargs: DumpablePlan())
+    monkeypatch.setattr(
+        routes_models,
+        "suggest_best_quant",
+        lambda **kwargs: {"recommended": "Q4_K_M", "reason": "recommended", "alternatives": []},
+    )
     plan = await api_client.post(
         f"/api/models/{model.id}/plan",
         json={"quant": "Q4_K_M", "context_length": 4096},
     )
     assert plan.status_code == 200
     assert plan.json()["gpu_layers"] == 20
+    assert plan.json()["quant_recommendation"]["recommended"] == "Q4_K_M"
 
     monkeypatch.setattr(routes_models.model_manager, "delete_model", lambda model_id, quant=None: True)
     assert (await api_client.delete(f"/api/models/local/{model.id}")).status_code == 200

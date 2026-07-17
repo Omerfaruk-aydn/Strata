@@ -24,6 +24,7 @@ const useModelStore = create((set, get) => ({
   loadReport: null,
   feasibility: null,
   runtimeProfile: null,
+  offloadPlan: null,
 
   // ── Actions ──
 
@@ -196,7 +197,7 @@ const useModelStore = create((set, get) => ({
   unloadModel: async () => {
     try {
       await apiFetch('/api/models/unload', { method: 'POST' });
-      set({ activeModel: null, loadReport: null, feasibility: null, runtimeProfile: null });
+      set({ activeModel: null, loadReport: null, feasibility: null, runtimeProfile: null, offloadPlan: null });
     } catch (err) {
       set({ error: err.message });
     }
@@ -210,7 +211,9 @@ const useModelStore = create((set, get) => ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ quant, context_length: contextLength }),
       });
-      return await res.json();
+      const data = await res.json();
+      set({ offloadPlan: data });
+      return data;
     } catch (err) {
       set({ error: err.message });
       return null;

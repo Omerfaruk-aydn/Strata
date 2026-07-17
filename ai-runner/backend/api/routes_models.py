@@ -5,6 +5,7 @@ Implements endpoints from Section 10 for model management.
 
 import asyncio
 import os
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -30,6 +31,7 @@ from ..core.runtime_capabilities import (
     detect_runtime_capabilities,
     validate_backend_preference,
 )
+from ..core.strata_ultra import StrataContainerReader, discover_layout
 from ..models.model_manager import model_manager, DownloadProgress
 from ..db import session_store
 from .auth import require_api_access
@@ -247,6 +249,32 @@ async def list_local_models():
             model_dict["compatibility"] = badge
             results.append(model_dict)
 
+        # Strata containers are separate from GGUF and must not go through
+        # the llama-cpp loader. Expose them as native Strata GPU runtimes.
+        for path in sorted(Path(model_manager.model_dir).glob("*.strata")):
+            try:
+                with StrataContainerReader(path) as reader:
+                    layout = discover_layout(reader.tensor_names())
+                    metadata = reader.manifest.get("metadata", {})
+                results.append({
+                    "id": path.name,
+                    "display_name": path.stem,
+                    "parameter_count": 0,
+                    "available_quants": ["Q0.5"],
+                    "downloaded_quant": "Q0.5",
+                    "file_size_bytes": path.stat().st_size,
+                    "local_path": str(path),
+                    "context_length": int(metadata.get("context_length", 4096) or 4096),
+                    "architecture": "strata-ultra",
+                    "total_layers": layout.get("block_count", 0),
+                    "metadata_valid": True,
+                    "compatibility": "compatible",
+                    "runtime": "strata",
+                    "strata_ready": bool(layout.get("complete_blocks")),
+                })
+            except (OSError, ValueError, KeyError) as exc:
+                logger.warning("Ignoring invalid Strata container %s: %s", path, exc)
+
         return {"models": results}
     except Exception as e:
         logger.error(f"List error: {e}")
@@ -296,14 +324,23 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
         if model and model.file_size_bytes > 0:
             file_size_mb = model.file_size_bytes / (1024 * 1024)
             param_count = model.parameter_count
+            available_quants = model.available_quants or [model.downloaded_quant or request.quant]
         else:
             # Estimate from typical model sizes
             param_count = model_manager._extract_param_count(model_id, [])
             if param_count == 0:
                 param_count = 7_000_000_000  # Default 7B
             file_size_mb = estimate_model_size_mb(param_count, request.quant)
+            available_quants = [request.quant]
 
         total_layers = estimate_total_layers(param_count)
+        quant_plan = suggest_best_quant(
+            parameter_count=param_count,
+            total_layers=total_layers,
+            available_quants=available_quants,
+            hardware=hardware,
+            context_length=request.context_length,
+        )
 
         plan = calculate_offload_plan(
             model_id=model_id,
@@ -316,7 +353,9 @@ async def get_offload_plan(model_id: str, request: PlanRequest):
             user_gpu_layers=request.n_gpu_layers,
         )
 
-        return plan.model_dump()
+        payload = plan.model_dump()
+        payload["quant_recommendation"] = quant_plan
+        return payload
 
     except HTTPException:
         raise
