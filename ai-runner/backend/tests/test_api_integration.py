@@ -561,6 +561,47 @@ async def test_model_library_search_plan_and_delete_contracts(api_client, monkey
 
 
 @pytest.mark.asyncio
+async def test_local_model_listing_includes_strata_containers(api_client, monkeypatch, tmp_path):
+    strata_path = tmp_path / "demo.strata"
+    strata_path.write_bytes(b"strata-demo")
+
+    monkeypatch.setattr(routes_models.model_manager, "model_dir", str(tmp_path))
+    monkeypatch.setattr(routes_models.model_manager, "get_local_models", lambda: [])
+
+    class FakeReader:
+        def __init__(self, path):
+            self.path = path
+            self.manifest = {"metadata": {"context_length": 8192}}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def tensor_names(self):
+            return ["tok_embeddings.weight", "layers.0.attn.weight"]
+
+    monkeypatch.setattr(routes_models, "StrataContainerReader", FakeReader)
+    monkeypatch.setattr(
+        routes_models,
+        "discover_layout",
+        lambda names: {"block_count": 1, "complete_blocks": ["layers.0"]},
+    )
+
+    response = await api_client.get("/api/models/local")
+    assert response.status_code == 200
+    models = response.json()["models"]
+    assert len(models) == 1
+    strata = models[0]
+    assert strata["id"] == "demo.strata"
+    assert strata["runtime"] == "strata"
+    assert strata["architecture"] == "strata-ultra"
+    assert strata["strata_ready"] is True
+    assert strata["context_length"] == 8192
+
+
+@pytest.mark.asyncio
 async def test_model_load_unload_and_optimization_contract(api_client, monkeypatch):
     model = ModelMetadata(
         id="org/loadable-7B-GGUF",
