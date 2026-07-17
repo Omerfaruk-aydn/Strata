@@ -422,6 +422,7 @@ def convert_gguf_to_strata(
             stream.seek(data_start + offset)
             raw = _read_exact(stream, byte_count)
             if tensor_type == GGML_TYPE_Q3_K and count > 4_000_000:
+                print(f"[strata] converting {name} ({count:,} values, Q3_K)", flush=True)
                 packed, scales, metrics = _convert_q3_k_chunked(raw, count, group_size)
                 for key in quality_totals:
                     quality_totals[key] += float(metrics.get(key, 0.0))
@@ -430,6 +431,7 @@ def convert_gguf_to_strata(
                 cols = int(count // rows)
                 writer.add_tensor(TensorRecord(name, rows, cols, group_size, target_codec, packed, scales_raw))
                 converted += 1
+                print(f"[strata] completed {converted}/{len(infos)} tensors", flush=True)
                 continue
             if tensor_type == GGML_TYPE_F32:
                 values = struct.unpack(f"<{count}f", raw)
@@ -489,6 +491,7 @@ def convert_gguf_to_strata(
             cols = int(count // rows)
             writer.add_tensor(TensorRecord(name, rows, cols, group_size, target_codec, packed, scales_raw))
             converted += 1
+            print(f"[strata] completed {converted}/{len(infos)} tensors: {name}", flush=True)
         writer.metadata["conversion_quality"] = {
             key: round(value / converted, 8) for key, value in quality_totals.items()
         } if converted else None
