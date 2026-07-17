@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import useExtremeStore from '../store/useExtremeStore';
 import useModelStore from '../store/useModelStore';
+import { apiFetch } from '../api/client';
 
 function mb(bytes = 0) {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(2)} MB` : `${bytes} B`;
@@ -8,6 +9,7 @@ function mb(bytes = 0) {
 
 export default function StrataUltraPanel({ extreme }) {
   const { localModels, fetchLocalModels } = useModelStore();
+  const ggufModels = localModels.filter((model) => model.runtime !== 'strata');
   const [modelId, setModelId] = useState('');
   const [codec, setCodec] = useState('ternary-q05');
   const [groupSize, setGroupSize] = useState(128);
@@ -15,18 +17,65 @@ export default function StrataUltraPanel({ extreme }) {
   const [conversion, setConversion] = useState(null);
   const [inspection, setInspection] = useState(null);
   const [valueCount, setValueCount] = useState(16384);
+  const [strataFile, setStrataFile] = useState('');
+  const [prompt, setPrompt] = useState('Merhaba, kendini kısaca tanıt.');
+  const [generation, setGeneration] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState('');
+  const selectedStrataModel = (extreme.ultraModels || []).find((model) => model.file === strataFile);
 
   useEffect(() => { fetchLocalModels(); }, [fetchLocalModels]);
   useEffect(() => {
-    if (!modelId && localModels.length) setModelId(localModels[0].id);
-  }, [localModels, modelId]);
+    if (!modelId && ggufModels.length) setModelId(ggufModels[0].id);
+  }, [ggufModels, modelId]);
+  useEffect(() => {
+    if (!strataFile && extreme.ultraModels?.length) setStrataFile(extreme.ultraModels[0].file);
+  }, [extreme.ultraModels, strataFile]);
 
   const runConversion = async () => {
     if (!modelId) return;
     const result = await extreme.convertToStrata(modelId, null, groupSize, codec, threshold);
     setConversion(result);
     const file = result?.target ? result.target.split(/[\\/]/).pop() : null;
+    await Promise.all([
+      extreme.fetchUltraModels(),
+      fetchLocalModels(),
+    ]);
+    if (file) {
+      setStrataFile(file);
+    }
     if (file) setInspection(await extreme.inspectStrataModel(file));
+  };
+
+  const runGeneration = async () => {
+    if (!strataFile || !prompt.trim()) return;
+    setGenerating(true);
+    setGenerationError('');
+    try {
+      const response = await apiFetch('/api/ultra/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_file: strataFile,
+          embedding_tensor: 'token_embd.weight',
+          output_tensor: 'output.weight',
+          width: selectedStrataModel?.width || 896,
+          context_capacity: 2048,
+          kv_mode: 'ternary05',
+          prompt: prompt.trim(),
+          max_new_tokens: 8,
+          timeout_s: 300,
+          memory_budget_bytes: 536870912,
+          resident_window: 2,
+          backend: 'cuda',
+        }),
+      });
+      setGeneration(await response.json());
+    } catch (error) {
+      setGenerationError(error.message || 'Strata üretimi başarısız oldu.');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return <div className="extreme-ultra-layout">
@@ -36,8 +85,16 @@ export default function StrataUltraPanel({ extreme }) {
     </section>
     <div className="extreme-ultra-grid">
       <section className="extreme-tool-card">
+        <span className="extreme-card-kicker">STRATA GPU CHAT</span><h3>Hazır modeli kullan</h3>
+        <label className="extreme-field"><span>Strata model</span><select value={strataFile} onChange={(event) => setStrataFile(event.target.value)}>{(extreme.ultraModels || []).map((model) => <option key={model.file} value={model.file}>{model.file}</option>)}</select></label>
+        <label className="extreme-field"><span>Prompt</span><textarea rows="3" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Modele bir şey sor..." /></label>
+        <button className="btn btn-primary" disabled={!strataFile || !prompt.trim() || generating} onClick={runGeneration}>{generating ? 'GPU üzerinde üretiliyor…' : 'GPU ile cevap üret'}</button>
+        {generationError && <div className="ultra-result">⚠ {generationError}</div>}
+        {generation && <div className="ultra-result"><strong>Cevap</strong><br />{generation.text}<br /><small>{generation.generated_tokens} token · {generation.backend} · {generation.blocks} blok</small></div>}
+      </section>
+      <section className="extreme-tool-card">
         <span className="extreme-card-kicker">FORMAT CONVERTER</span><h3>GGUF → Strata</h3>
-        <label className="extreme-field"><span>Yerel GGUF kaynak</span><select value={modelId} onChange={(event) => setModelId(event.target.value)}>{!localModels.length && <option value="">GGUF model bulunamadı</option>}{localModels.map((model) => <option key={model.id} value={model.id}>{model.display_name} · {model.downloaded_quant}</option>)}</select></label>
+        <label className="extreme-field"><span>Yerel GGUF kaynak</span><select value={modelId} onChange={(event) => setModelId(event.target.value)}>{!ggufModels.length && <option value="">GGUF model bulunamadı</option>}{ggufModels.map((model) => <option key={model.id} value={model.id}>{model.display_name} · {model.downloaded_quant}</option>)}</select></label>
         <div className="extreme-inline-fields"><label className="extreme-field"><span>Codec</span><select value={codec} onChange={(event) => setCodec(event.target.value)}><option value="ternary-q05">ternary-q05</option><option value="sparse05">sparse05</option></select></label><label className="extreme-field"><span>Grup</span><select value={groupSize} onChange={(event) => setGroupSize(Number(event.target.value))}><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label></div>
         {codec === 'sparse05' && <label className="extreme-field"><span>Sparse threshold</span><input type="number" min="0" max="10" step="0.01" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} /></label>}
         <button className="btn btn-primary" disabled={!modelId} onClick={runConversion}>Dönüştürmeyi başlat</button>
