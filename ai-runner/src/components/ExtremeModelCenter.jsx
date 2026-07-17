@@ -29,6 +29,23 @@ function formatTime(milliseconds = 0) {
   return `${Math.round(milliseconds)} ms`;
 }
 
+const QUANT_BPW = {
+  IQ1_S: 1.56,
+  IQ2_XXS: 2.06,
+  IQ2_XS: 2.31,
+  Q2_K: 2.6,
+  IQ3_XS: 3.3,
+  Q3_K_M: 3.9,
+  IQ4_XS: 4.25,
+  Q4_K_M: 4.8,
+  Q5_K_M: 5.7,
+};
+
+function estimateModelSizeMb(parameterCount, quant) {
+  const bpw = QUANT_BPW[quant] || 4.8;
+  return ((parameterCount * bpw) / 8) / (1024 * 1024);
+}
+
 export default function ExtremeModelCenter({ isOpen, onClose }) {
   const extreme = useExtremeStore();
   const settings = useSettingsStore();
@@ -61,6 +78,8 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
   const report = extreme.report;
   const status = STATUS_STYLES[report?.status] || STATUS_STYLES.blocked;
   const activeJobs = extreme.quantization.jobs?.filter((job) => ['queued', 'running'].includes(job.status)) || [];
+  const simulatedParams = Math.round(Number(parameterB) * 1_000_000_000);
+  const estimatedSizeMb = estimateModelSizeMb(simulatedParams, simulationQuant);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -238,20 +257,23 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                     )}
                   </label>
                 ) : (
-                  <div className="extreme-inline-fields">
-                    <div className="extreme-inline-warning">
-                      7B denemesi için varsayılan değerler hazır. Buradan modeli 7B olarak simüle edip uygun quant ve bellek planını hızlıca görebilirsin.
-                    </div>
+                    <div className="extreme-inline-fields">
+                      <div className="extreme-inline-warning">
+                        7B denemesi için varsayılan değerler hazır. Buradan modeli 7B olarak simüle edip uygun quant ve bellek planını hızlıca görebilirsin.
+                      </div>
                     <label className="extreme-field">
                       <span>Parametre</span>
                       <div className="extreme-input-suffix"><input type="number" min="1" max="10000" value={parameterB} onChange={(event) => setParameterB(Number(event.target.value))} /><b>B</b></div>
                     </label>
-                    <label className="extreme-field">
-                      <span>Quant</span>
-                      <select value={simulationQuant} onChange={(event) => setSimulationQuant(event.target.value)}>
-                        {['IQ1_S', 'IQ2_XXS', 'IQ2_XS', 'Q2_K', 'IQ3_XS', 'Q3_K_M', 'IQ4_XS', 'Q4_K_M', 'Q5_K_M'].map((quant) => <option key={quant}>{quant}</option>)}
-                      </select>
-                    </label>
+                      <label className="extreme-field">
+                        <span>Quant</span>
+                        <select value={simulationQuant} onChange={(event) => setSimulationQuant(event.target.value)}>
+                          {['IQ1_S', 'IQ2_XXS', 'IQ2_XS', 'Q2_K', 'IQ3_XS', 'Q3_K_M', 'IQ4_XS', 'Q4_K_M', 'Q5_K_M'].map((quant) => <option key={quant}>{quant}</option>)}
+                        </select>
+                      </label>
+                      <div className="extreme-inline-warning">
+                        Bu seçimle yaklaşık model boyutu: <b>{formatMb(estimatedSizeMb)}</b>.
+                      </div>
                   </div>
                 )}
 
