@@ -38,7 +38,7 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
   const [selectedKey, setSelectedKey] = useState('');
   const [preset, setPreset] = useState(settings.extremePreset || 'maximum_capacity');
   const [contextLength, setContextLength] = useState(settings.maxContextLength || 2048);
-  const [parameterB, setParameterB] = useState(100);
+  const [parameterB, setParameterB] = useState(7);
   const [simulationQuant, setSimulationQuant] = useState('Q3_K_M');
   const [targetQuant, setTargetQuant] = useState('Q3_K_M');
   const [allowRequantize, setAllowRequantize] = useState(false);
@@ -239,6 +239,9 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                   </label>
                 ) : (
                   <div className="extreme-inline-fields">
+                    <div className="extreme-inline-warning">
+                      7B denemesi için varsayılan değerler hazır. Buradan modeli 7B olarak simüle edip uygun quant ve bellek planını hızlıca görebilirsin.
+                    </div>
                     <label className="extreme-field">
                       <span>Parametre</span>
                       <div className="extreme-input-suffix"><input type="number" min="1" max="10000" value={parameterB} onChange={(event) => setParameterB(Number(event.target.value))} /><b>B</b></div>
