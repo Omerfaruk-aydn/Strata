@@ -44,7 +44,14 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
   const [allowRequantize, setAllowRequantize] = useState(false);
   const [loadSuccess, setLoadSuccess] = useState(false);
 
-  const modelOptions = useMemo(() => localModels.map((model, index) => ({
+  const strataModels = useMemo(
+    () => localModels.filter((model) => model.runtime === 'strata'),
+    [localModels],
+  );
+  // The capacity planner and llama-cpp loader accept GGUF only. Strata
+  // containers are handled in the Ultra tab, but we still surface them
+  // clearly so they are not mistaken for missing models.
+  const modelOptions = useMemo(() => localModels.filter((model) => model.runtime !== 'strata').map((model, index) => ({
     key: `${index}:${model.id}:${model.downloaded_quant || ''}:${model.local_path || ''}`,
     model,
   })), [localModels]);
@@ -68,6 +75,18 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
     ]);
     return undefined;
   }, [isOpen]);
+
+  useEffect(() => {
+    const openStrataTab = () => setTab('ultra');
+    window.addEventListener('ai-runner:open-strata', openStrataTab);
+    return () => window.removeEventListener('ai-runner:open-strata', openStrataTab);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && strataModels.length > 0) {
+      setTab('ultra');
+    }
+  }, [isOpen, strataModels.length]);
 
   useEffect(() => {
     if (!selectedKey && modelOptions.length > 0) setSelectedKey(modelOptions[0].key);
@@ -190,6 +209,13 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
           {tab === 'planner' && (
             <div className="extreme-planner-grid">
               <aside className="extreme-control-panel">
+                {strataModels.length > 0 && (
+                  <div className="extreme-inline-warning">
+                    Bu cihazda {strataModels.length} adet yerel <b>.strata</b> model var.
+                    Kapasite planı yalnızca GGUF için çalışır; Strata modelleri <b>Strata Ultra</b> sekmesinden açılır.
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setTab('ultra')}>Strata Ultra’ya geç</button>
+                  </div>
+                )}
                 <div className="extreme-segmented">
                   <button className={sourceMode === 'local' ? 'active' : ''} onClick={() => setSourceMode('local')}>Yerel GGUF</button>
                   <button className={sourceMode === 'simulation' ? 'active' : ''} onClick={() => setSourceMode('simulation')}>İndirme Öncesi</button>
@@ -204,6 +230,11 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                         <option key={key} value={key}>{model.display_name} · {model.downloaded_quant}</option>
                       ))}
                     </select>
+                    {modelOptions.length === 0 && strataModels.length > 0 && (
+                      <small className="extreme-hint">
+                        GGUF kaynak yok; elindeki modeller Strata formatında. Onları yüklemek yerine Ultra sekmesinden doğrudan kullanabilirsin.
+                      </small>
+                    )}
                   </label>
                 ) : (
                   <div className="extreme-inline-fields">
