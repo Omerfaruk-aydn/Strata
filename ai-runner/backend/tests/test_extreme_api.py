@@ -138,9 +138,11 @@ async def test_extreme_presets_simulation_and_local_analysis(extreme_client):
         },
     )
     assert simulation.status_code == 200
-    simulated_report = simulation.json()["report"]
+    simulation_payload = simulation.json()
+    simulated_report = simulation_payload["report"]
     assert simulated_report["model"]["parameter_count"] == 100_000_000_000
     assert simulated_report["runtime"]["n_gpu_layers"] > 0
+    assert simulation_payload["quant_recommendation"]["recommended"] == "Q3_K_M"
 
     local = await client.post(
         f"/api/extreme/analyze/{model.id}",

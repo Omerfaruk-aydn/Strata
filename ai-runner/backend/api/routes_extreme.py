@@ -20,6 +20,7 @@ from ..core.extreme_model import (
     model_path_fingerprint,
     specification_from_gguf,
 )
+from ..core.memory_manager import estimate_total_layers, suggest_best_quant
 from ..core.hardware_profile import detect_gpus, get_hardware_profile
 from ..core.inference_engine import InferenceParams, engine
 from ..core.quantization_service import SUPPORTED_OUTPUT_QUANTS, quantization_manager
@@ -169,6 +170,18 @@ async def analyze_local_model(model_id: str, request: AnalyzeRequest):
 @router.post("/simulate")
 async def simulate_model(request: SimulateRequest):
     try:
+        total_layers = request.total_layers or estimate_total_layers(request.parameter_count or 7_000_000_000)
+        quant_recommendation = suggest_best_quant(
+            parameter_count=request.parameter_count or 7_000_000_000,
+            total_layers=total_layers,
+            available_quants=[request.quant],
+            hardware=await asyncio.to_thread(
+                get_hardware_profile,
+                model_manager.model_dir,
+                request.selected_gpu_index,
+            ),
+            context_length=request.native_context_length,
+        )
         spec = estimated_specification(
             request.model_id,
             request.quant,
@@ -192,7 +205,7 @@ async def simulate_model(request: SimulateRequest):
             selected_gpu_index=request.selected_gpu_index,
             force_cpu=force_cpu,
         )
-        return {"report": report.model_dump()}
+        return {"report": report.model_dump(), "quant_recommendation": quant_recommendation}
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

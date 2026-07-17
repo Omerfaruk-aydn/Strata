@@ -342,7 +342,7 @@ const useExtremeStore = create((set, get) => ({
         }),
       });
       const data = await res.json();
-      set({ report: data.report, metadata: null, isLoading: false });
+      set({ report: data.report, metadata: null, quantRecommendation: data.quant_recommendation || null, isLoading: false });
       return data.report;
     } catch (error) {
       set({ error: error.message, report: null, isLoading: false });

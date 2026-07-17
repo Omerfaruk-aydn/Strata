@@ -318,10 +318,10 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                       <Config label="Depolama" value={report.memory.storage_mode.replaceAll('_', ' ')} />
                     </div>
 
-                    {offloadPlan?.quant_recommendation && (
+                    {(offloadPlan?.quant_recommendation || extreme.quantRecommendation) && (
                       <div className="extreme-inline-warning">
-                        Bu donanım için başlangıç önerisi: <b>{offloadPlan.quant_recommendation.recommended}</b>.
-                        {offloadPlan.quant_recommendation.reason ? ` Sebep: ${offloadPlan.quant_recommendation.reason}.` : ''}
+                        Bu donanım için başlangıç önerisi: <b>{(offloadPlan?.quant_recommendation || extreme.quantRecommendation).recommended}</b>.
+                        {(offloadPlan?.quant_recommendation || extreme.quantRecommendation).reason ? ` Sebep: ${(offloadPlan?.quant_recommendation || extreme.quantRecommendation).reason}.` : ''}
                       </div>
                     )}
 
