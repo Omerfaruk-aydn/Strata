@@ -80,6 +80,7 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
   const activeJobs = extreme.quantization.jobs?.filter((job) => ['queued', 'running'].includes(job.status)) || [];
   const simulatedParams = Math.round(Number(parameterB) * 1_000_000_000);
   const estimatedSizeMb = estimateModelSizeMb(simulatedParams, simulationQuant);
+  const isSevenB = Number(parameterB) === 7;
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -261,10 +262,15 @@ export default function ExtremeModelCenter({ isOpen, onClose }) {
                       <div className="extreme-inline-warning">
                         7B denemesi için varsayılan değerler hazır. Buradan modeli 7B olarak simüle edip uygun quant ve bellek planını hızlıca görebilirsin.
                       </div>
-                    <label className="extreme-field">
-                      <span>Parametre</span>
-                      <div className="extreme-input-suffix"><input type="number" min="1" max="10000" value={parameterB} onChange={(event) => setParameterB(Number(event.target.value))} /><b>B</b></div>
-                    </label>
+                      {isSevenB && (
+                        <div className="extreme-inline-warning">
+                          7B için pratik başlangıç: <b>Q4_K_M</b> kalite/boyut dengesi için iyi bir referanstır; bellek çok sıkışırsa daha düşük quant’a inebiliriz.
+                        </div>
+                      )}
+                      <label className="extreme-field">
+                        <span>Parametre</span>
+                        <div className="extreme-input-suffix"><input type="number" min="1" max="10000" value={parameterB} onChange={(event) => setParameterB(Number(event.target.value))} /><b>B</b></div>
+                      </label>
                       <label className="extreme-field">
                         <span>Quant</span>
                         <select value={simulationQuant} onChange={(event) => setSimulationQuant(event.target.value)}>
