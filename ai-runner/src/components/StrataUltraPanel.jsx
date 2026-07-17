@@ -86,6 +86,11 @@ export default function StrataUltraPanel({ extreme }) {
     <div className="extreme-ultra-grid">
       <section className="extreme-tool-card">
         <span className="extreme-card-kicker">STRATA GPU CHAT</span><h3>Hazır modeli kullan</h3>
+        {ggufModels.length === 0 && (
+          <div className="extreme-inline-warning">
+            Şu anda yerel GGUF modeli yok. Elindeki yerel modeller Strata ise, onları bu sekmeden doğrudan kullanabilirsin; dönüştürme kısmı boş kalır.
+          </div>
+        )}
         <label className="extreme-field"><span>Strata model</span><select value={strataFile} onChange={(event) => setStrataFile(event.target.value)}>{(extreme.ultraModels || []).map((model) => <option key={model.file} value={model.file}>{model.file}</option>)}</select></label>
         <label className="extreme-field"><span>Prompt</span><textarea rows="3" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Modele bir şey sor..." /></label>
         <button className="btn btn-primary" disabled={!strataFile || !prompt.trim() || generating} onClick={runGeneration}>{generating ? 'GPU üzerinde üretiliyor…' : 'GPU ile cevap üret'}</button>
@@ -94,6 +99,11 @@ export default function StrataUltraPanel({ extreme }) {
       </section>
       <section className="extreme-tool-card">
         <span className="extreme-card-kicker">FORMAT CONVERTER</span><h3>GGUF → Strata</h3>
+        {ggufModels.length === 0 && (
+          <div className="extreme-inline-warning">
+            Dönüştürme için önce yerel bir GGUF model gerekir. Strata dosyaları bu listede görünmez.
+          </div>
+        )}
         <label className="extreme-field"><span>Yerel GGUF kaynak</span><select value={modelId} onChange={(event) => setModelId(event.target.value)}>{!ggufModels.length && <option value="">GGUF model bulunamadı</option>}{ggufModels.map((model) => <option key={model.id} value={model.id}>{model.display_name} · {model.downloaded_quant}</option>)}</select></label>
         <div className="extreme-inline-fields"><label className="extreme-field"><span>Codec</span><select value={codec} onChange={(event) => setCodec(event.target.value)}><option value="ternary-q05">ternary-q05</option><option value="sparse05">sparse05</option></select></label><label className="extreme-field"><span>Grup</span><select value={groupSize} onChange={(event) => setGroupSize(Number(event.target.value))}><option value="64">64</option><option value="128">128</option><option value="256">256</option></select></label></div>
         {codec === 'sparse05' && <label className="extreme-field"><span>Sparse threshold</span><input type="number" min="0" max="10" step="0.01" value={threshold} onChange={(event) => setThreshold(Number(event.target.value))} /></label>}
